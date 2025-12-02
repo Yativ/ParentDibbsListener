@@ -29,6 +29,7 @@ import type { WhatsAppGroup, Settings as SettingsType, Alert, ConnectionStatus }
 export default function Dashboard() {
   const { toast } = useToast();
   const socketRef = useRef<Socket | null>(null);
+  const toastRef = useRef(toast);
   
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -44,19 +45,31 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
 
-  const initSocket = useCallback(() => {
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  useEffect(() => {
     if (socketRef.current?.connected) return;
 
     const socket = io({
       path: "/socket.io",
       transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
 
     socket.on("connect", () => {
       console.log("Socket connected");
     });
 
+    socket.on("disconnect", () => {
+      console.log("Socket disconnected");
+    });
+
     socket.on("connection_status", (status: ConnectionStatus) => {
+      console.log("Connection status:", status);
       setConnectionStatus(status);
       if (status === "connected") {
         setQrCode(null);
@@ -64,6 +77,7 @@ export default function Dashboard() {
     });
 
     socket.on("qr", (qr: string) => {
+      console.log("QR code received");
       setQrCode(qr);
       setConnectionStatus("qr_ready");
     });
@@ -84,7 +98,7 @@ export default function Dashboard() {
 
     socket.on("new_alert", (alert: Alert) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
-      toast({
+      toastRef.current({
         title: "התראה נשלחה",
         description: `מילת מפתח "${alert.matchedKeyword}" נמצאה ב-${alert.groupName}`,
       });
@@ -92,14 +106,14 @@ export default function Dashboard() {
 
     socket.on("settings_saved", () => {
       setIsSaving(false);
-      toast({
+      toastRef.current({
         title: "ההגדרות נשמרו",
         description: "העדפות הניטור שלך עודכנו בהצלחה.",
       });
     });
 
     socket.on("error", (error: string) => {
-      toast({
+      toastRef.current({
         title: "שגיאה",
         description: error,
         variant: "destructive",
@@ -107,14 +121,11 @@ export default function Dashboard() {
     });
 
     socketRef.current = socket;
-  }, [toast]);
 
-  useEffect(() => {
-    initSocket();
     return () => {
-      socketRef.current?.disconnect();
+      socket.disconnect();
     };
-  }, [initSocket]);
+  }, []);
 
   const handleGroupToggle = (groupId: string) => {
     setSettings((prev) => {
