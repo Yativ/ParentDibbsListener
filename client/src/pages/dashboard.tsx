@@ -1,0 +1,519 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { io, Socket } from "socket.io-client";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Wifi, 
+  WifiOff, 
+  MessageSquare, 
+  Settings, 
+  Bell, 
+  Save, 
+  RefreshCw, 
+  CheckCircle2, 
+  AlertCircle,
+  Loader2,
+  QrCode,
+  Users,
+  Search
+} from "lucide-react";
+import type { WhatsAppGroup, Settings as SettingsType, Alert, ConnectionStatus } from "@shared/schema";
+
+export default function Dashboard() {
+  const { toast } = useToast();
+  const socketRef = useRef<Socket | null>(null);
+  
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
+  const [settings, setSettings] = useState<SettingsType>({
+    watchedGroups: [],
+    alertKeywords: [],
+    myNumber: undefined,
+  });
+  const [keywordsInput, setKeywordsInput] = useState("");
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+
+  const initSocket = useCallback(() => {
+    if (socketRef.current?.connected) return;
+
+    const socket = io({
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+    });
+
+    socket.on("connect", () => {
+      console.log("Socket connected");
+    });
+
+    socket.on("connection_status", (status: ConnectionStatus) => {
+      setConnectionStatus(status);
+      if (status === "connected") {
+        setQrCode(null);
+      }
+    });
+
+    socket.on("qr", (qr: string) => {
+      setQrCode(qr);
+      setConnectionStatus("qr_ready");
+    });
+
+    socket.on("groups", (groupList: WhatsAppGroup[]) => {
+      setGroups(groupList);
+      setIsLoadingGroups(false);
+    });
+
+    socket.on("settings", (loadedSettings: SettingsType) => {
+      setSettings(loadedSettings);
+      setKeywordsInput(loadedSettings.alertKeywords.join(", "));
+    });
+
+    socket.on("alerts", (alertList: Alert[]) => {
+      setAlerts(alertList);
+    });
+
+    socket.on("new_alert", (alert: Alert) => {
+      setAlerts((prev) => [alert, ...prev].slice(0, 50));
+      toast({
+        title: "Alert Sent",
+        description: `Keyword "${alert.matchedKeyword}" found in ${alert.groupName}`,
+      });
+    });
+
+    socket.on("settings_saved", () => {
+      setIsSaving(false);
+      toast({
+        title: "Settings Saved",
+        description: "Your monitoring preferences have been updated.",
+      });
+    });
+
+    socket.on("error", (error: string) => {
+      toast({
+        title: "Error",
+        description: error,
+        variant: "destructive",
+      });
+    });
+
+    socketRef.current = socket;
+  }, [toast]);
+
+  useEffect(() => {
+    initSocket();
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, [initSocket]);
+
+  const handleGroupToggle = (groupId: string) => {
+    setSettings((prev) => {
+      const isWatched = prev.watchedGroups.includes(groupId);
+      return {
+        ...prev,
+        watchedGroups: isWatched
+          ? prev.watchedGroups.filter((id) => id !== groupId)
+          : [...prev.watchedGroups, groupId],
+      };
+    });
+  };
+
+  const handleSelectAll = () => {
+    const groupIds = filteredGroups.map((g) => g.id);
+    setSettings((prev) => ({
+      ...prev,
+      watchedGroups: [...new Set([...prev.watchedGroups, ...groupIds])],
+    }));
+  };
+
+  const handleDeselectAll = () => {
+    const groupIds = filteredGroups.map((g) => g.id);
+    setSettings((prev) => ({
+      ...prev,
+      watchedGroups: prev.watchedGroups.filter((id) => !groupIds.includes(id)),
+    }));
+  };
+
+  const handleSaveSettings = () => {
+    setIsSaving(true);
+    const keywords = keywordsInput
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => k.length > 0);
+    
+    const updatedSettings = {
+      ...settings,
+      alertKeywords: keywords,
+    };
+    
+    socketRef.current?.emit("save_settings", updatedSettings);
+  };
+
+  const handleRefreshGroups = () => {
+    setIsLoadingGroups(true);
+    socketRef.current?.emit("refresh_groups");
+  };
+
+  const filteredGroups = groups.filter((group) =>
+    group.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const formatTimestamp = (timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  const getStatusConfig = () => {
+    switch (connectionStatus) {
+      case "connected":
+        return {
+          icon: Wifi,
+          text: "Connected",
+          bgClass: "bg-chart-2/10 dark:bg-chart-2/20",
+          textClass: "text-chart-2",
+          borderClass: "border-chart-2/30",
+        };
+      case "connecting":
+        return {
+          icon: Loader2,
+          text: "Connecting...",
+          bgClass: "bg-chart-3/10 dark:bg-chart-3/20",
+          textClass: "text-chart-3",
+          borderClass: "border-chart-3/30",
+        };
+      case "qr_ready":
+        return {
+          icon: QrCode,
+          text: "Scan QR Code",
+          bgClass: "bg-primary/10 dark:bg-primary/20",
+          textClass: "text-primary",
+          borderClass: "border-primary/30",
+        };
+      default:
+        return {
+          icon: WifiOff,
+          text: "Disconnected",
+          bgClass: "bg-destructive/10 dark:bg-destructive/20",
+          textClass: "text-destructive",
+          borderClass: "border-destructive/30",
+        };
+    }
+  };
+
+  const statusConfig = getStatusConfig();
+  const StatusIcon = statusConfig.icon;
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+        <header className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <MessageSquare className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-app-title">
+                ParentDibbs
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                WhatsApp Group Monitor
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <Card className={`border ${statusConfig.borderClass} ${statusConfig.bgClass}`} data-testid="card-status">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <StatusIcon 
+                  className={`w-5 h-5 ${statusConfig.textClass} ${connectionStatus === "connecting" ? "animate-spin" : ""}`} 
+                />
+                <div>
+                  <p className={`font-medium ${statusConfig.textClass}`} data-testid="text-connection-status">
+                    {statusConfig.text}
+                  </p>
+                  {connectionStatus === "connected" && (
+                    <p className="text-xs text-muted-foreground">
+                      Monitoring {settings.watchedGroups.length} groups
+                    </p>
+                  )}
+                </div>
+              </div>
+              {connectionStatus === "connected" && (
+                <Badge variant="secondary" className="text-xs">
+                  {settings.alertKeywords.length} keywords active
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {(connectionStatus === "qr_ready" || connectionStatus === "disconnected") && qrCode && (
+          <Card data-testid="card-qr-code">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <QrCode className="w-5 h-5" />
+                Scan to Connect
+              </CardTitle>
+              <CardDescription>
+                Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center pb-6">
+              <div className="bg-white p-4 rounded-xl shadow-sm border">
+                <img 
+                  src={qrCode} 
+                  alt="WhatsApp QR Code" 
+                  className="w-64 h-64 object-contain"
+                  data-testid="img-qr-code"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-4 text-center max-w-xs">
+                The QR code will refresh automatically if it expires
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {connectionStatus === "connecting" && !qrCode && (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
+              <p className="text-muted-foreground">Initializing WhatsApp connection...</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {connectionStatus === "connected" && (
+          <>
+            <Card data-testid="card-groups">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-muted-foreground" />
+                    <CardTitle className="text-lg">Watch Groups</CardTitle>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleRefreshGroups}
+                    disabled={isLoadingGroups}
+                    data-testid="button-refresh-groups"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingGroups ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                </div>
+                <CardDescription>
+                  Select groups to monitor for keyword alerts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search groups..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-search-groups"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={handleSelectAll}
+                    data-testid="button-select-all"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                    Select All
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={handleDeselectAll}
+                    data-testid="button-deselect-all"
+                  >
+                    Deselect All
+                  </Button>
+                  <Badge variant="secondary" className="ml-auto">
+                    {settings.watchedGroups.length} selected
+                  </Badge>
+                </div>
+
+                <ScrollArea className="h-72 rounded-md border">
+                  <div className="p-3 space-y-1">
+                    {isLoadingGroups ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : filteredGroups.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <Users className="w-8 h-8 text-muted-foreground/50 mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          {searchQuery ? "No groups match your search" : "No groups available"}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredGroups.map((group) => (
+                        <label
+                          key={group.id}
+                          className="flex items-center gap-3 p-3 rounded-lg hover-elevate cursor-pointer transition-colors"
+                          data-testid={`label-group-${group.id}`}
+                        >
+                          <Checkbox
+                            checked={settings.watchedGroups.includes(group.id)}
+                            onCheckedChange={() => handleGroupToggle(group.id)}
+                            data-testid={`checkbox-group-${group.id}`}
+                          />
+                          <span className="text-sm flex-1 truncate">{group.name}</span>
+                          {settings.watchedGroups.includes(group.id) && (
+                            <Badge variant="secondary" className="text-xs shrink-0">
+                              Watching
+                            </Badge>
+                          )}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-keywords">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-muted-foreground" />
+                  <CardTitle className="text-lg">Alert Keywords</CardTitle>
+                </div>
+                <CardDescription>
+                  Enter keywords separated by commas. When a message contains any of these words, you'll receive a private WhatsApp message alert.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Input
+                  placeholder="urgent, emergency, help, important (comma-separated)"
+                  value={keywordsInput}
+                  onChange={(e) => setKeywordsInput(e.target.value)}
+                  data-testid="input-keywords"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {keywordsInput
+                    .split(",")
+                    .map((k) => k.trim())
+                    .filter((k) => k.length > 0)
+                    .map((keyword, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs">
+                        {keyword}
+                      </Badge>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="sticky bottom-4 z-10">
+              <Button 
+                className="w-full shadow-lg" 
+                size="lg"
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+                data-testid="button-save-settings"
+              >
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                Save Settings
+              </Button>
+            </div>
+
+            <Card data-testid="card-alerts">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-5 h-5 text-muted-foreground" />
+                    <CardTitle className="text-lg">Recent Alerts</CardTitle>
+                  </div>
+                  <Badge variant="secondary">
+                    {alerts.length} alerts
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Messages that triggered keyword alerts
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-80">
+                  {alerts.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Bell className="w-10 h-10 text-muted-foreground/30 mb-3" />
+                      <p className="text-sm font-medium text-muted-foreground">No alerts yet</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1 max-w-xs">
+                        Alerts will appear here when messages match your keywords
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pr-4">
+                      {alerts.map((alert) => (
+                        <div 
+                          key={alert.id} 
+                          className="p-4 rounded-lg bg-card border space-y-2"
+                          data-testid={`card-alert-${alert.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{alert.groupName}</span>
+                              <Badge className="text-xs">{alert.matchedKeyword}</Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatTimestamp(alert.timestamp)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            <span className="font-medium">{alert.senderName}:</span>{" "}
+                            {alert.messageText.length > 200
+                              ? `${alert.messageText.slice(0, 200)}...`
+                              : alert.messageText}
+                          </p>
+                          {alert.alertSent && (
+                            <div className="flex items-center gap-1 text-xs text-chart-2">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Alert sent to your WhatsApp</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

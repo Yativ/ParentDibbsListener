@@ -1,38 +1,76 @@
-import { type User, type InsertUser } from "@shared/schema";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
+import type { Settings, Alert } from "@shared/schema";
 
-// modify the interface with any CRUD methods
-// you might need
+const SETTINGS_FILE = "./settings.json";
+const MAX_ALERTS = 100;
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getSettings(): Settings;
+  saveSettings(settings: Settings): void;
+  getAlerts(): Alert[];
+  addAlert(alert: Omit<Alert, "id">): Alert;
+  clearAlerts(): void;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
+export class FileStorage implements IStorage {
+  private settings: Settings;
+  private alerts: Alert[];
 
   constructor() {
-    this.users = new Map();
+    this.settings = this.loadSettings();
+    this.alerts = [];
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  private loadSettings(): Settings {
+    try {
+      if (existsSync(SETTINGS_FILE)) {
+        const data = readFileSync(SETTINGS_FILE, "utf-8");
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      console.error("Error loading settings:", error);
+    }
+    return {
+      watchedGroups: [],
+      alertKeywords: [],
+      myNumber: undefined,
+    };
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  getSettings(): Settings {
+    return this.settings;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  saveSettings(settings: Settings): void {
+    this.settings = settings;
+    try {
+      writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      throw error;
+    }
+  }
+
+  getAlerts(): Alert[] {
+    return this.alerts;
+  }
+
+  addAlert(alertData: Omit<Alert, "id">): Alert {
+    const alert: Alert = {
+      ...alertData,
+      id: randomUUID(),
+    };
+    this.alerts.unshift(alert);
+    if (this.alerts.length > MAX_ALERTS) {
+      this.alerts = this.alerts.slice(0, MAX_ALERTS);
+    }
+    return alert;
+  }
+
+  clearAlerts(): void {
+    this.alerts = [];
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new FileStorage();
