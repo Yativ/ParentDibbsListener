@@ -1,3 +1,3 @@
-2025/12/02-11:16:27.741 f11 Reusing MANIFEST /home/runner/workspace/.wwebjs_auth/session/Default/Service Worker/Database/MANIFEST-000001
-2025/12/02-11:16:27.741 f11 Recovering log #3
-2025/12/02-11:16:27.745 f11 Reusing old log /home/runner/workspace/.wwebjs_auth/session/Default/Service Worker/Database/000003.log 
+2025/12/02-11:56:22.305 152c Reusing MANIFEST /home/runner/workspace/.wwebjs_auth/session/Default/Service Worker/Database/MANIFEST-000001
+2025/12/02-11:56:22.315 152c Recovering log #3
+2025/12/02-11:56:22.315 152c Reusing old log /home/runner/workspace/.wwebjs_auth/session/Default/Service Worker/Database/000003.log 
