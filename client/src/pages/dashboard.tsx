@@ -54,10 +54,13 @@ export default function Dashboard() {
 
     const socket = io({
       path: "/socket.io",
-      transports: ["websocket", "polling"],
+      // Use polling first, then upgrade to websocket for better production compatibility
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      // Increase timeout for production
+      timeout: 20000,
     });
 
     socket.on("connect", () => {

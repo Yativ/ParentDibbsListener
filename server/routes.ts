@@ -144,27 +144,58 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
     socketIO.emit("connection_status", connectionStatus);
   });
 
-  whatsappClient.on("message", async (msg: any) => {
+  // Use message_create to capture all messages including from group members
+  whatsappClient.on("message_create", async (msg: any) => {
     try {
+      // Skip messages sent by ourselves
+      if (msg.fromMe) return;
+      
       const chat = await msg.getChat();
       
-      if (!chat.isGroup) return;
+      if (!chat.isGroup) {
+        return;
+      }
 
       const settings = storage.getSettings();
       
-      if (!settings.watchedGroups.includes(chat.id._serialized)) return;
+      log(`Message in group "${chat.name}" (${chat.id._serialized}): "${msg.body.substring(0, 50)}..."`, "whatsapp");
+      log(`Watched groups: ${JSON.stringify(settings.watchedGroups)}`, "whatsapp");
+      log(`Keywords: ${JSON.stringify(settings.alertKeywords)}`, "whatsapp");
+      
+      if (!settings.watchedGroups.includes(chat.id._serialized)) {
+        log(`Group ${chat.name} is not in watched list, skipping`, "whatsapp");
+        return;
+      }
 
       const messageText = msg.body.toLowerCase();
       const matchedKeyword = settings.alertKeywords.find((keyword: string) =>
         messageText.includes(keyword.toLowerCase())
       );
 
-      if (!matchedKeyword) return;
+      if (!matchedKeyword) {
+        log(`No keyword match found in message`, "whatsapp");
+        return;
+      }
 
-      const contact = await msg.getContact();
-      const senderName = contact.pushname || contact.name || contact.number || "לא ידוע";
+      // Get sender name with error handling - getContact() can fail on newer WhatsApp versions
+      let senderName = "לא ידוע";
+      try {
+        const contact = await msg.getContact();
+        senderName = contact?.pushname || contact?.name || contact?.number || "לא ידוע";
+      } catch (contactError) {
+        log(`Could not get contact info: ${contactError}`, "whatsapp");
+        // Try to get sender info from message directly
+        try {
+          const senderId = msg.author || msg.from;
+          if (senderId) {
+            senderName = senderId.replace("@c.us", "").replace("@s.whatsapp.net", "");
+          }
+        } catch {
+          // Keep default "לא ידוע"
+        }
+      }
 
-      log(`Keyword "${matchedKeyword}" detected in ${chat.name}`, "whatsapp");
+      log(`Keyword "${matchedKeyword}" detected in ${chat.name} from ${senderName}`, "whatsapp");
 
       const alertData = {
         groupId: chat.id._serialized,
@@ -178,6 +209,7 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
 
       const alert = storage.addAlert(alertData);
 
+      // Send WhatsApp alert message to user
       if (myNumber) {
         try {
           const myChat = await whatsappClient?.getChatById(`${myNumber}@c.us`);
@@ -191,14 +223,20 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
             
             await myChat.sendMessage(alertMessage);
             alert.alertSent = true;
-            log(`Alert sent to ${myNumber}`, "whatsapp");
+            log(`Alert WhatsApp message sent to ${myNumber}`, "whatsapp");
+          } else {
+            log(`Could not find chat for ${myNumber}`, "whatsapp");
           }
         } catch (sendError) {
-          log(`Error sending alert: ${sendError}`, "whatsapp");
+          log(`Error sending WhatsApp alert: ${sendError}`, "whatsapp");
         }
+      } else {
+        log(`No user phone number configured, cannot send WhatsApp alert`, "whatsapp");
       }
 
+      // Emit to dashboard
       socketIO.emit("new_alert", alert);
+      log(`Alert emitted to dashboard`, "whatsapp");
     } catch (error) {
       log(`Error processing message: ${error}`, "whatsapp");
     }
@@ -248,7 +286,17 @@ export async function registerRoutes(
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
+      credentials: true,
     },
+    // Allow both transports for better compatibility in production
+    transports: ["polling", "websocket"],
+    // Increase timeouts for production environments
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    // Allow upgrades from polling to websocket
+    allowUpgrades: true,
+    // Handle proxies properly
+    allowEIO3: true,
   });
 
   io.on("connection", async (socket) => {

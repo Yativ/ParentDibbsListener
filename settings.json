@@ -1,5 +1,17 @@
 {
-  "watchedGroups": [],
-  "alertKeywords": [],
+  "watchedGroups": [
+    "120363302477944111@g.us",
+    "120363316128694724@g.us",
+    "120363315877279174@g.us",
+    "120363402220043615@g.us"
+  ],
+  "alertKeywords": [
+    "מארגנים",
+    "google.sheet",
+    "קבוצה",
+    "מסיבה",
+    "google.doc",
+    "אירוע כיתה"
+  ],
   "myNumber": "972546364043"
 }
