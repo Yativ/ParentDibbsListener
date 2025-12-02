@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { motion } from "framer-motion";
 import { 
   Wifi, 
   WifiOff, 
@@ -17,11 +17,12 @@ import {
   Save, 
   RefreshCw, 
   CheckCircle2, 
-  AlertCircle,
   Loader2,
   QrCode,
   Users,
-  Search
+  Search,
+  Sparkles,
+  Zap
 } from "lucide-react";
 import type { WhatsAppGroup, Settings as SettingsType, Alert, ConnectionStatus } from "@shared/schema";
 
@@ -223,89 +224,172 @@ export default function Dashboard() {
   const StatusIcon = statusConfig.icon;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-        <header className="space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <MessageSquare className="w-6 h-6 text-primary" />
-            </div>
+        <motion.header 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center py-6"
+        >
+          <div className="flex flex-col items-center gap-4">
+            <motion.div 
+              className="relative"
+              animate={{ 
+                rotate: [0, 5, -5, 0],
+              }}
+              transition={{ 
+                duration: 4,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+            >
+              <div className="p-4 bg-gradient-to-br from-primary/20 to-chart-4/20 rounded-2xl shadow-lg">
+                <MessageSquare className="w-10 h-10 text-primary" />
+              </div>
+              <motion.div 
+                className="absolute -top-1 -right-1"
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Sparkles className="w-5 h-5 text-chart-3" />
+              </motion.div>
+            </motion.div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-app-title">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-chart-4 to-chart-5 bg-clip-text text-transparent" data-testid="text-app-title">
                 ParentDibbs
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mt-1 flex items-center justify-center gap-2">
+                <Zap className="w-4 h-4 text-chart-3" />
                 WhatsApp Group Monitor
+                <Zap className="w-4 h-4 text-chart-3" />
               </p>
             </div>
           </div>
-        </header>
+        </motion.header>
 
-        <Card className={`border ${statusConfig.borderClass} ${statusConfig.bgClass}`} data-testid="card-status">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <StatusIcon 
-                  className={`w-5 h-5 ${statusConfig.textClass} ${connectionStatus === "connecting" ? "animate-spin" : ""}`} 
-                />
-                <div>
-                  <p className={`font-medium ${statusConfig.textClass}`} data-testid="text-connection-status">
-                    {statusConfig.text}
-                  </p>
-                  {connectionStatus === "connected" && (
-                    <p className="text-xs text-muted-foreground">
-                      Monitoring {settings.watchedGroups.length} groups
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+        >
+          <Card className={`border-2 ${statusConfig.borderClass} ${statusConfig.bgClass} shadow-md`} data-testid="card-status">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <motion.div
+                    animate={connectionStatus === "connecting" ? { rotate: 360 } : {}}
+                    transition={{ duration: 1, repeat: connectionStatus === "connecting" ? Infinity : 0, ease: "linear" }}
+                  >
+                    <StatusIcon className={`w-6 h-6 ${statusConfig.textClass}`} />
+                  </motion.div>
+                  <div>
+                    <p className={`font-semibold text-lg ${statusConfig.textClass}`} data-testid="text-connection-status">
+                      {statusConfig.text}
                     </p>
-                  )}
+                    {connectionStatus === "connected" && (
+                      <p className="text-xs text-muted-foreground">
+                        Monitoring {settings.watchedGroups.length} groups
+                      </p>
+                    )}
+                  </div>
                 </div>
+                {connectionStatus === "connected" && (
+                  <Badge variant="secondary" className="text-sm px-3 py-1">
+                    {settings.alertKeywords.length} keywords active
+                  </Badge>
+                )}
               </div>
-              {connectionStatus === "connected" && (
-                <Badge variant="secondary" className="text-xs">
-                  {settings.alertKeywords.length} keywords active
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {(connectionStatus === "qr_ready" || connectionStatus === "disconnected") && qrCode && (
-          <Card data-testid="card-qr-code">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <QrCode className="w-5 h-5" />
-                Scan to Connect
-              </CardTitle>
-              <CardDescription>
-                Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center pb-6">
-              <div className="bg-white p-4 rounded-xl shadow-sm border">
-                <img 
-                  src={qrCode} 
-                  alt="WhatsApp QR Code" 
-                  className="w-64 h-64 object-contain"
-                  data-testid="img-qr-code"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-4 text-center max-w-xs">
-                The QR code will refresh automatically if it expires
-              </p>
             </CardContent>
           </Card>
+        </motion.div>
+
+        {(connectionStatus === "qr_ready" || connectionStatus === "disconnected") && qrCode && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card className="overflow-hidden" data-testid="card-qr-code">
+              <CardHeader className="pb-4 text-center bg-gradient-to-r from-primary/5 to-chart-4/5">
+                <CardTitle className="flex items-center justify-center gap-2 text-xl">
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  >
+                    <QrCode className="w-6 h-6 text-primary" />
+                  </motion.div>
+                  Scan to Connect
+                </CardTitle>
+                <CardDescription className="max-w-sm mx-auto">
+                  Open WhatsApp on your phone, go to Settings &rarr; Linked Devices &rarr; Link a Device
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center py-8">
+                <motion.div 
+                  className="bg-white p-6 rounded-2xl shadow-lg border-2 border-primary/20"
+                  animate={{ 
+                    boxShadow: ["0 10px 40px rgba(0,0,0,0.1)", "0 10px 40px rgba(59, 130, 246, 0.2)", "0 10px 40px rgba(0,0,0,0.1)"]
+                  }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                >
+                  <img 
+                    src={qrCode} 
+                    alt="WhatsApp QR Code" 
+                    className="w-64 h-64 object-contain"
+                    data-testid="img-qr-code"
+                  />
+                </motion.div>
+                <motion.p 
+                  className="text-sm text-muted-foreground mt-6 text-center max-w-xs flex items-center gap-2"
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  QR code refreshes automatically
+                </motion.p>
+              </CardContent>
+            </Card>
+          </motion.div>
         )}
 
         {connectionStatus === "connecting" && !qrCode && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-              <p className="text-muted-foreground">Initializing WhatsApp connection...</p>
-            </CardContent>
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card className="overflow-hidden">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <motion.div
+                  className="relative"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary" />
+                </motion.div>
+                <motion.p 
+                  className="text-muted-foreground mt-6 text-lg font-medium"
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                >
+                  Initializing WhatsApp...
+                </motion.p>
+                <p className="text-sm text-muted-foreground/70 mt-2">
+                  This may take a moment
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
         )}
 
         {connectionStatus === "connected" && (
-          <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+            className="space-y-6"
+          >
             <Card data-testid="card-groups">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -511,7 +595,7 @@ export default function Dashboard() {
                 </ScrollArea>
               </CardContent>
             </Card>
-          </>
+          </motion.div>
         )}
       </div>
     </div>

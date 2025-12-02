@@ -40,6 +40,7 @@ let connectionStatus: ConnectionStatus = "disconnected";
 let myNumber: string | undefined = undefined;
 let Client: any = null;
 let LocalAuth: any = null;
+let cachedQrCode: string | null = null;
 
 async function loadWhatsAppModule() {
   if (Client && LocalAuth) return { Client, LocalAuth };
@@ -96,6 +97,7 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
         width: 256,
         margin: 2,
       });
+      cachedQrCode = qrDataUrl;
       socketIO.emit("qr", qrDataUrl);
       socketIO.emit("connection_status", connectionStatus);
     } catch (error) {
@@ -106,6 +108,7 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
   whatsappClient.on("ready", async () => {
     log("WhatsApp client is ready!", "whatsapp");
     connectionStatus = "connected";
+    cachedQrCode = null;
     socketIO.emit("connection_status", connectionStatus);
 
     try {
@@ -254,6 +257,10 @@ export async function registerRoutes(
     socket.emit("connection_status", connectionStatus);
     socket.emit("settings", storage.getSettings());
     socket.emit("alerts", storage.getAlerts());
+
+    if (connectionStatus === "qr_ready" && cachedQrCode) {
+      socket.emit("qr", cachedQrCode);
+    }
 
     if (connectionStatus === "connected") {
       await sendGroupsToClients(io!);
