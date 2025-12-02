@@ -132,7 +132,7 @@ export default function Dashboard() {
     const groupIds = filteredGroups.map((g) => g.id);
     setSettings((prev) => ({
       ...prev,
-      watchedGroups: [...new Set([...prev.watchedGroups, ...groupIds])],
+      watchedGroups: Array.from(new Set([...prev.watchedGroups, ...groupIds])),
     }));
   };
 
