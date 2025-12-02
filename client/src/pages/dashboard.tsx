@@ -267,9 +267,7 @@ export default function Dashboard() {
               </motion.div>
             </motion.div>
             <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-chart-4 to-chart-5 bg-clip-text text-transparent" data-testid="text-app-title">
-                כוננות קל
-              </h1>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-chart-4 to-chart-5 bg-clip-text text-transparent" data-testid="text-app-title">שני בקבוקי שתייה</h1>
               <p className="text-sm text-muted-foreground mt-1 flex items-center justify-center gap-2">
                 <Zap className="w-4 h-4 text-chart-3" />
                 ניטור קבוצות וואטסאפ
