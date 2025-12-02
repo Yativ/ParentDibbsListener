@@ -1,10 +1,10 @@
-# ParentDibbs - WhatsApp Group Monitor
+# כוננות קל - WhatsApp Group Monitor
 
 ## Overview
 
-ParentDibbs is a WhatsApp monitoring dashboard that allows users to track specific groups for keyword mentions and receive real-time private message alerts. The application provides a web-based interface for managing WhatsApp group subscriptions, defining alert keywords, and viewing triggered alerts when important messages are detected.
+כוננות קל (Easy Standby) is a WhatsApp monitoring dashboard that allows users to track specific groups for keyword mentions and receive real-time private message alerts. The application provides a web-based interface in Hebrew for managing WhatsApp group subscriptions, defining alert keywords, and viewing triggered alerts when important messages are detected.
 
-The system uses WhatsApp Web.js to connect to WhatsApp via QR code authentication, monitors selected groups in real-time, and sends private WhatsApp messages when keywords are matched in group conversations.
+The system uses WhatsApp Web.js to connect to WhatsApp via QR code authentication, monitors selected groups in real-time, and sends private WhatsApp messages when keywords are matched in group conversations. The entire UI is in Hebrew with RTL (right-to-left) support.
 
 ## User Preferences
 

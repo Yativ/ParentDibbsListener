@@ -85,22 +85,22 @@ export default function Dashboard() {
     socket.on("new_alert", (alert: Alert) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
       toast({
-        title: "Alert Sent",
-        description: `Keyword "${alert.matchedKeyword}" found in ${alert.groupName}`,
+        title: "התראה נשלחה",
+        description: `מילת מפתח "${alert.matchedKeyword}" נמצאה ב-${alert.groupName}`,
       });
     });
 
     socket.on("settings_saved", () => {
       setIsSaving(false);
       toast({
-        title: "Settings Saved",
-        description: "Your monitoring preferences have been updated.",
+        title: "ההגדרות נשמרו",
+        description: "העדפות הניטור שלך עודכנו בהצלחה.",
       });
     });
 
     socket.on("error", (error: string) => {
       toast({
-        title: "Error",
+        title: "שגיאה",
         description: error,
         variant: "destructive",
       });
@@ -176,11 +176,11 @@ export default function Dashboard() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+    if (diffMins < 1) return "עכשיו";
+    if (diffMins < 60) return `לפני ${diffMins} דקות`;
+    if (diffHours < 24) return `לפני ${diffHours} שעות`;
+    if (diffDays < 7) return `לפני ${diffDays} ימים`;
+    return date.toLocaleDateString("he-IL");
   };
 
   const getStatusConfig = () => {
@@ -188,7 +188,7 @@ export default function Dashboard() {
       case "connected":
         return {
           icon: Wifi,
-          text: "Connected",
+          text: "מחובר",
           bgClass: "bg-chart-2/10 dark:bg-chart-2/20",
           textClass: "text-chart-2",
           borderClass: "border-chart-2/30",
@@ -196,7 +196,7 @@ export default function Dashboard() {
       case "connecting":
         return {
           icon: Loader2,
-          text: "Connecting...",
+          text: "מתחבר...",
           bgClass: "bg-chart-3/10 dark:bg-chart-3/20",
           textClass: "text-chart-3",
           borderClass: "border-chart-3/30",
@@ -204,7 +204,7 @@ export default function Dashboard() {
       case "qr_ready":
         return {
           icon: QrCode,
-          text: "Scan QR Code",
+          text: "סרוק קוד QR",
           bgClass: "bg-primary/10 dark:bg-primary/20",
           textClass: "text-primary",
           borderClass: "border-primary/30",
@@ -212,7 +212,7 @@ export default function Dashboard() {
       default:
         return {
           icon: WifiOff,
-          text: "Disconnected",
+          text: "מנותק",
           bgClass: "bg-destructive/10 dark:bg-destructive/20",
           textClass: "text-destructive",
           borderClass: "border-destructive/30",
@@ -224,7 +224,7 @@ export default function Dashboard() {
   const StatusIcon = statusConfig.icon;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
         <motion.header 
           initial={{ opacity: 0, y: -20 }}
@@ -248,7 +248,7 @@ export default function Dashboard() {
                 <MessageSquare className="w-10 h-10 text-primary" />
               </div>
               <motion.div 
-                className="absolute -top-1 -right-1"
+                className="absolute -top-1 -left-1"
                 animate={{ scale: [1, 1.2, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               >
@@ -257,11 +257,11 @@ export default function Dashboard() {
             </motion.div>
             <div>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-chart-4 to-chart-5 bg-clip-text text-transparent" data-testid="text-app-title">
-                ParentDibbs
+                כוננות קל
               </h1>
               <p className="text-sm text-muted-foreground mt-1 flex items-center justify-center gap-2">
                 <Zap className="w-4 h-4 text-chart-3" />
-                WhatsApp Group Monitor
+                ניטור קבוצות וואטסאפ
                 <Zap className="w-4 h-4 text-chart-3" />
               </p>
             </div>
@@ -289,14 +289,14 @@ export default function Dashboard() {
                     </p>
                     {connectionStatus === "connected" && (
                       <p className="text-xs text-muted-foreground">
-                        Monitoring {settings.watchedGroups.length} groups
+                        מנטר {settings.watchedGroups.length} קבוצות
                       </p>
                     )}
                   </div>
                 </div>
                 {connectionStatus === "connected" && (
                   <Badge variant="secondary" className="text-sm px-3 py-1">
-                    {settings.alertKeywords.length} keywords active
+                    {settings.alertKeywords.length} מילות מפתח פעילות
                   </Badge>
                 )}
               </div>
@@ -319,10 +319,10 @@ export default function Dashboard() {
                   >
                     <QrCode className="w-6 h-6 text-primary" />
                   </motion.div>
-                  Scan to Connect
+                  סרוק להתחברות
                 </CardTitle>
                 <CardDescription className="max-w-sm mx-auto">
-                  Open WhatsApp on your phone, go to Settings &rarr; Linked Devices &rarr; Link a Device
+                  פתח את וואטסאפ בטלפון, לך להגדרות ← מכשירים מקושרים ← קשר מכשיר
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col items-center py-8">
@@ -335,7 +335,7 @@ export default function Dashboard() {
                 >
                   <img 
                     src={qrCode} 
-                    alt="WhatsApp QR Code" 
+                    alt="קוד QR לוואטסאפ" 
                     className="w-64 h-64 object-contain"
                     data-testid="img-qr-code"
                   />
@@ -346,7 +346,7 @@ export default function Dashboard() {
                   transition={{ duration: 2, repeat: Infinity }}
                 >
                   <RefreshCw className="w-4 h-4" />
-                  QR code refreshes automatically
+                  הקוד מתרענן אוטומטית
                 </motion.p>
               </CardContent>
             </Card>
@@ -373,10 +373,10 @@ export default function Dashboard() {
                   animate={{ opacity: [0.5, 1, 0.5] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 >
-                  Initializing WhatsApp...
+                  מאתחל חיבור לוואטסאפ...
                 </motion.p>
                 <p className="text-sm text-muted-foreground/70 mt-2">
-                  This may take a moment
+                  זה עשוי לקחת כמה רגעים
                 </p>
               </CardContent>
             </Card>
@@ -395,7 +395,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Users className="w-5 h-5 text-muted-foreground" />
-                    <CardTitle className="text-lg">Watch Groups</CardTitle>
+                    <CardTitle className="text-lg">קבוצות לניטור</CardTitle>
                   </div>
                   <Button 
                     variant="outline" 
@@ -404,22 +404,22 @@ export default function Dashboard() {
                     disabled={isLoadingGroups}
                     data-testid="button-refresh-groups"
                   >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingGroups ? "animate-spin" : ""}`} />
-                    Refresh
+                    <RefreshCw className={`w-4 h-4 ml-2 ${isLoadingGroups ? "animate-spin" : ""}`} />
+                    רענן
                   </Button>
                 </div>
                 <CardDescription>
-                  Select groups to monitor for keyword alerts
+                  בחר קבוצות לניטור התראות מילות מפתח
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search groups..."
+                    placeholder="חפש קבוצות..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
+                    className="pr-9"
                     data-testid="input-search-groups"
                   />
                 </div>
@@ -431,8 +431,8 @@ export default function Dashboard() {
                     onClick={handleSelectAll}
                     data-testid="button-select-all"
                   >
-                    <CheckCircle2 className="w-4 h-4 mr-1" />
-                    Select All
+                    <CheckCircle2 className="w-4 h-4 ml-1" />
+                    בחר הכל
                   </Button>
                   <Button 
                     variant="ghost" 
@@ -440,10 +440,10 @@ export default function Dashboard() {
                     onClick={handleDeselectAll}
                     data-testid="button-deselect-all"
                   >
-                    Deselect All
+                    בטל בחירה
                   </Button>
-                  <Badge variant="secondary" className="ml-auto">
-                    {settings.watchedGroups.length} selected
+                  <Badge variant="secondary" className="mr-auto">
+                    {settings.watchedGroups.length} נבחרו
                   </Badge>
                 </div>
 
@@ -457,7 +457,7 @@ export default function Dashboard() {
                       <div className="flex flex-col items-center justify-center py-8 text-center">
                         <Users className="w-8 h-8 text-muted-foreground/50 mb-2" />
                         <p className="text-sm text-muted-foreground">
-                          {searchQuery ? "No groups match your search" : "No groups available"}
+                          {searchQuery ? "לא נמצאו קבוצות תואמות" : "אין קבוצות זמינות"}
                         </p>
                       </div>
                     ) : (
@@ -475,7 +475,7 @@ export default function Dashboard() {
                           <span className="text-sm flex-1 truncate">{group.name}</span>
                           {settings.watchedGroups.includes(group.id) && (
                             <Badge variant="secondary" className="text-xs shrink-0">
-                              Watching
+                              במעקב
                             </Badge>
                           )}
                         </label>
@@ -490,15 +490,15 @@ export default function Dashboard() {
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                   <Settings className="w-5 h-5 text-muted-foreground" />
-                  <CardTitle className="text-lg">Alert Keywords</CardTitle>
+                  <CardTitle className="text-lg">מילות מפתח להתראה</CardTitle>
                 </div>
                 <CardDescription>
-                  Enter keywords separated by commas. When a message contains any of these words, you'll receive a private WhatsApp message alert.
+                  הכנס מילות מפתח מופרדות בפסיקים. כאשר הודעה מכילה אחת מהמילים האלה, תקבל הודעת וואטסאפ פרטית.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <Input
-                  placeholder="urgent, emergency, help, important (comma-separated)"
+                  placeholder="דחוף, חירום, עזרה, חשוב (מופרד בפסיקים)"
                   value={keywordsInput}
                   onChange={(e) => setKeywordsInput(e.target.value)}
                   data-testid="input-keywords"
@@ -526,11 +526,11 @@ export default function Dashboard() {
                 data-testid="button-save-settings"
               >
                 {isSaving ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
                 ) : (
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 ml-2" />
                 )}
-                Save Settings
+                שמור הגדרות
               </Button>
             </div>
 
@@ -539,14 +539,14 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Bell className="w-5 h-5 text-muted-foreground" />
-                    <CardTitle className="text-lg">Recent Alerts</CardTitle>
+                    <CardTitle className="text-lg">התראות אחרונות</CardTitle>
                   </div>
                   <Badge variant="secondary">
-                    {alerts.length} alerts
+                    {alerts.length} התראות
                   </Badge>
                 </div>
                 <CardDescription>
-                  Messages that triggered keyword alerts
+                  הודעות שהפעילו התראות מילות מפתח
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -554,13 +554,13 @@ export default function Dashboard() {
                   {alerts.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <Bell className="w-10 h-10 text-muted-foreground/30 mb-3" />
-                      <p className="text-sm font-medium text-muted-foreground">No alerts yet</p>
+                      <p className="text-sm font-medium text-muted-foreground">עדיין אין התראות</p>
                       <p className="text-xs text-muted-foreground/70 mt-1 max-w-xs">
-                        Alerts will appear here when messages match your keywords
+                        התראות יופיעו כאן כאשר הודעות יתאימו למילות המפתח שלך
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-3 pr-4">
+                    <div className="space-y-3 pl-4">
                       {alerts.map((alert) => (
                         <div 
                           key={alert.id} 
@@ -585,7 +585,7 @@ export default function Dashboard() {
                           {alert.alertSent && (
                             <div className="flex items-center gap-1 text-xs text-chart-2">
                               <CheckCircle2 className="w-3 h-3" />
-                              <span>Alert sent to your WhatsApp</span>
+                              <span>התראה נשלחה לוואטסאפ שלך</span>
                             </div>
                           )}
                         </div>

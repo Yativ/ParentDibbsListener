@@ -162,7 +162,7 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
       if (!matchedKeyword) return;
 
       const contact = await msg.getContact();
-      const senderName = contact.pushname || contact.name || contact.number || "Unknown";
+      const senderName = contact.pushname || contact.name || contact.number || "לא ידוע";
 
       log(`Keyword "${matchedKeyword}" detected in ${chat.name}`, "whatsapp");
 
@@ -182,12 +182,12 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
         try {
           const myChat = await whatsappClient?.getChatById(`${myNumber}@c.us`);
           if (myChat) {
-            const alertMessage = `*ParentDibbs Alert*\n\n` +
-              `*Group:* ${chat.name}\n` +
-              `*Keyword:* ${matchedKeyword}\n` +
-              `*From:* ${senderName}\n` +
-              `*Time:* ${new Date().toLocaleString()}\n\n` +
-              `*Message:*\n${msg.body}`;
+            const alertMessage = `*התראת כוננות קל*\n\n` +
+              `*קבוצה:* ${chat.name}\n` +
+              `*מילת מפתח:* ${matchedKeyword}\n` +
+              `*מאת:* ${senderName}\n` +
+              `*זמן:* ${new Date().toLocaleString("he-IL")}\n\n` +
+              `*הודעה:*\n${msg.body}`;
             
             await myChat.sendMessage(alertMessage);
             alert.alertSent = true;
