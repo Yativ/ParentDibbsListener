@@ -281,6 +281,19 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // IMPORTANT: Add health check endpoints FIRST before any async operations
+  // These must respond immediately for deployment health checks
+  app.get("/", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      whatsapp: connectionStatus,
+    });
+  });
+
   io = new SocketIOServer(httpServer, {
     path: "/socket.io",
     cors: {
@@ -288,14 +301,10 @@ export async function registerRoutes(
       methods: ["GET", "POST"],
       credentials: true,
     },
-    // Allow both transports for better compatibility in production
     transports: ["polling", "websocket"],
-    // Increase timeouts for production environments
     pingTimeout: 60000,
     pingInterval: 25000,
-    // Allow upgrades from polling to websocket
     allowUpgrades: true,
-    // Handle proxies properly
     allowEIO3: true,
   });
 
@@ -343,12 +352,13 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      whatsapp: connectionStatus,
-    });
-  });
-
   return httpServer;
+}
+
+// Export function to start WhatsApp after server is listening
+export function startWhatsAppClient() {
+  if (io && !whatsappClient) {
+    log("Starting WhatsApp client after server ready...", "whatsapp");
+    initWhatsAppClient(io);
+  }
 }
