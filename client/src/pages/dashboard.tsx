@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const [isStartingWhatsApp, setIsStartingWhatsApp] = useState(false);
 
   useEffect(() => {
     toastRef.current = toast;
@@ -74,6 +75,7 @@ export default function Dashboard() {
     socket.on("connection_status", (status: ConnectionStatus) => {
       console.log("Connection status:", status);
       setConnectionStatus(status);
+      setIsStartingWhatsApp(false);
       if (status === "connected") {
         setQrCode(null);
       }
@@ -176,6 +178,11 @@ export default function Dashboard() {
   const handleRefreshGroups = () => {
     setIsLoadingGroups(true);
     socketRef.current?.emit("refresh_groups");
+  };
+
+  const handleStartWhatsApp = () => {
+    setIsStartingWhatsApp(true);
+    socketRef.current?.emit("start_whatsapp");
   };
 
   const filteredGroups = groups.filter((group) =>
@@ -316,6 +323,39 @@ export default function Dashboard() {
           </Card>
         </motion.div>
 
+        {connectionStatus === "disconnected" && !qrCode && !isStartingWhatsApp && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card className="overflow-hidden" data-testid="card-connect">
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <motion.div 
+                  className="p-6 bg-gradient-to-br from-chart-2/20 to-primary/20 rounded-full mb-6"
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <MessageSquare className="w-12 h-12 text-chart-2" />
+                </motion.div>
+                <h3 className="text-xl font-semibold mb-2">התחבר לוואטסאפ</h3>
+                <p className="text-muted-foreground text-center max-w-sm mb-6">
+                  לחץ על הכפתור למטה כדי להתחיל את תהליך ההתחברות לוואטסאפ
+                </p>
+                <Button 
+                  size="lg"
+                  onClick={handleStartWhatsApp}
+                  className="gap-2"
+                  data-testid="button-connect-whatsapp"
+                >
+                  <Wifi className="w-5 h-5" />
+                  התחבר לוואטסאפ
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {(connectionStatus === "qr_ready" || connectionStatus === "disconnected") && qrCode && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -365,7 +405,7 @@ export default function Dashboard() {
           </motion.div>
         )}
 
-        {connectionStatus === "connecting" && !qrCode && (
+        {(connectionStatus === "connecting" || isStartingWhatsApp) && !qrCode && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

@@ -41,6 +41,8 @@ let myNumber: string | undefined = undefined;
 let Client: any = null;
 let LocalAuth: any = null;
 let cachedQrCode: string | null = null;
+let isInitializing: boolean = false;
+let initPromise: Promise<any> | null = null;
 
 async function loadWhatsAppModule() {
   if (Client && LocalAuth) return { Client, LocalAuth };
@@ -51,6 +53,42 @@ async function loadWhatsAppModule() {
   Client = module.Client;
   LocalAuth = module.LocalAuth;
   return { Client, LocalAuth };
+}
+
+async function ensureWhatsAppClient(socketIO: SocketIOServer): Promise<any> {
+  // Already connected
+  if (whatsappClient && connectionStatus === "connected") {
+    return whatsappClient;
+  }
+  
+  // Already initializing - wait for existing promise
+  if (isInitializing && initPromise) {
+    return initPromise;
+  }
+  
+  // Clear old client if disconnected to allow fresh reconnection
+  if (whatsappClient && connectionStatus === "disconnected") {
+    log("Clearing old WhatsApp client for reconnection", "whatsapp");
+    try {
+      await whatsappClient.destroy();
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    whatsappClient = null;
+    cachedQrCode = null;
+  }
+  
+  // Start new initialization
+  isInitializing = true;
+  initPromise = initWhatsAppClient(socketIO);
+  
+  try {
+    const result = await initPromise;
+    return result;
+  } finally {
+    isInitializing = false;
+    initPromise = null;
+  }
 }
 
 async function initWhatsAppClient(socketIO: SocketIOServer) {
@@ -281,12 +319,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // IMPORTANT: Add health check endpoints FIRST before any async operations
-  // These must respond immediately for deployment health checks
-  app.get("/", (_req, res) => {
-    res.status(200).send("OK");
-  });
-
+  // Health check endpoint - must respond immediately for deployment health checks
+  // Note: "/" is served by the SPA (Vite in dev, static files in prod)
   app.get("/api/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
@@ -323,9 +357,22 @@ export async function registerRoutes(
       await sendGroupsToClients(io!);
     }
 
-    if (!whatsappClient) {
-      initWhatsAppClient(io!);
-    }
+    // Handle manual WhatsApp connection request
+    socket.on("start_whatsapp", async () => {
+      log("User requested WhatsApp connection", "socket.io");
+      if (connectionStatus === "disconnected" && !isInitializing) {
+        try {
+          await ensureWhatsAppClient(io!);
+        } catch (error) {
+          log(`Error starting WhatsApp: ${error}`, "socket.io");
+          socket.emit("error", "Failed to start WhatsApp connection");
+        }
+      } else if (isInitializing) {
+        log("WhatsApp already initializing, please wait", "socket.io");
+      } else {
+        log(`WhatsApp already in state: ${connectionStatus}`, "socket.io");
+      }
+    });
 
     socket.on("save_settings", (settings: Settings) => {
       try {
@@ -353,12 +400,4 @@ export async function registerRoutes(
   });
 
   return httpServer;
-}
-
-// Export function to start WhatsApp after server is listening
-export function startWhatsAppClient() {
-  if (io && !whatsappClient) {
-    log("Starting WhatsApp client after server ready...", "whatsapp");
-    initWhatsAppClient(io);
-  }
 }

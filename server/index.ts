@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes, startWhatsAppClient } from "./routes";
+import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -93,12 +93,8 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
-      
-      // Start WhatsApp client AFTER server is listening
-      // This ensures health checks can respond immediately
-      setTimeout(() => {
-        startWhatsAppClient();
-      }, 1000);
+      // WhatsApp client is initialized lazily when user clicks "Connect" button
+      // This ensures health checks always pass immediately
     },
   );
 })();
