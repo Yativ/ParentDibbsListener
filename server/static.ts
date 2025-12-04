@@ -19,8 +19,17 @@ export function serveStatic(app: Express) {
     cachedIndexHtml = fs.readFileSync(indexPath, "utf-8");
   }
 
-  // Root "/" health check is handled in index.ts before all middleware
-  // This static middleware handles all other assets
+  // Serve root "/" with cached HTML for instant health check response
+  // This returns 200 with the actual SPA HTML (not plain "OK" text)
+  app.get("/", (_req, res) => {
+    if (cachedIndexHtml) {
+      res.status(200).type("html").send(cachedIndexHtml);
+    } else {
+      res.sendFile(indexPath);
+    }
+  });
+
+  // Static middleware handles all other assets (JS, CSS, images, etc.)
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
