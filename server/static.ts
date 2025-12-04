@@ -19,16 +19,8 @@ export function serveStatic(app: Express) {
     cachedIndexHtml = fs.readFileSync(indexPath, "utf-8");
   }
 
-  // Root route serves cached HTML for instant health check response
-  // This MUST be before express.static to take priority
-  app.get("/", (_req, res) => {
-    if (cachedIndexHtml) {
-      res.status(200).type("html").send(cachedIndexHtml);
-    } else {
-      res.status(200).send("OK");
-    }
-  });
-
+  // Root "/" health check is handled in index.ts before all middleware
+  // This static middleware handles all other assets
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist

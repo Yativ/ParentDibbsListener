@@ -6,6 +6,15 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
+// CRITICAL: Health check at root MUST be the very first handler in production
+// This ensures deployment health checks pass immediately without any middleware delays
+// In development, Vite handles the root route for the SPA
+if (process.env.NODE_ENV === "production") {
+  app.get("/", (_req, res) => {
+    res.status(200).send("OK");
+  });
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
