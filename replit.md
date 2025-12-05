@@ -55,6 +55,16 @@ Preferred communication style: Simple, everyday language.
 - Separate routing and static file serving modules
 - Development mode includes Vite middleware for HMR
 
+**Fast Startup Architecture (for VM deployment):**
+- Health check endpoint `/api/health` registered synchronously BEFORE httpServer.listen()
+- In production: static files served synchronously before listening
+- In development: temporary loading page shown until Vite is ready (controlled by viteReady flag)
+- Server starts listening IMMEDIATELY on port 5000
+- Async setup (registerRoutes, socket.io, Vite) happens AFTER server is already listening
+- This ensures deployment health checks pass instantly even if async setup takes time
+- WhatsApp client is lazy-loaded on user action, not at server startup
+- `/api/status` endpoint provides detailed WhatsApp connection status
+
 **WhatsApp Integration Design:**
 - WhatsApp Web.js client with LocalAuth strategy for persistent sessions
 - Puppeteer runs headless Chromium for WhatsApp Web automation
