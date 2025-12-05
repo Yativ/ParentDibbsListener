@@ -158,6 +158,20 @@ httpServer.listen(
   },
   () => {
     log(`serving on port ${port}`);
+
+    // Auto-initialize WhatsApp in production for immediate availability
+    if (process.env.REPL_SLUG || process.env.NODE_ENV === "production") {
+      (async () => {
+        try {
+          log("Auto-initializing WhatsApp for production...");
+          const { ensureWhatsAppClient } = await import("./routes.js");
+          await ensureWhatsAppClient(io);
+          log("✅ WhatsApp initialized successfully");
+        } catch (error) {
+          log(`❌ Failed to auto-initialize WhatsApp: ${error}`);
+        }
+      })();
+    }
   },
 );
 
