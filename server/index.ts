@@ -65,10 +65,29 @@ app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// In production, serve static files immediately - no loader needed
-// serveStatic() caches index.html in memory for instant / responses
+// In production, serve static files
+// If static serving fails, add a fallback / handler
 if (process.env.NODE_ENV === "production") {
-  serveStatic(app);
+  let staticOk = false;
+  try {
+    serveStatic(app);
+    staticOk = true;
+  } catch (e) {
+    console.error("[static] Failed to initialize static file serving:", e);
+  }
+  
+  // If static files failed to load, add fallback / handler
+  if (!staticOk) {
+    app.get("/", (_req, res) => {
+      res.status(200).type("html").send(`<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head><meta charset="UTF-8"><title>כוננות קל</title>
+<meta http-equiv="refresh" content="2"></head>
+<body style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;font-family:system-ui;background:#0a0a0a;color:#fff">
+<div style="text-align:center"><h1>כוננות קל</h1><p>טוען...</p></div>
+</body></html>`);
+    });
+  }
 } else {
   // Development only: loading state while Vite initializes
   let viteReady = false;
