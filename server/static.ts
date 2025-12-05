@@ -5,9 +5,11 @@ import path from "path";
 let cachedIndexHtml: string | null = null;
 
 export function serveStatic(app: Express) {
-  // Use process.cwd() for production builds since __dirname is incorrect after esbuild bundling
-  // In production, the bundle is at dist/index.cjs and static files are at dist/public/
-  const distPath = path.resolve(process.cwd(), "dist", "public");
+  // Get the directory of the running script (dist/index.cjs -> dist/)
+  // Then resolve 'public' from there (dist/ + public = dist/public/)
+  // This works regardless of working directory, which may differ in deployment environments
+  const scriptDir = path.dirname(process.argv[1]);
+  const distPath = path.resolve(scriptDir, "public");
   if (!fs.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`,
