@@ -319,9 +319,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Health check endpoint - must respond immediately for deployment health checks
-  // Note: "/" is served by the SPA (Vite in dev, static files in prod)
-  app.get("/api/health", (_req, res) => {
+  // WhatsApp status endpoint - provides detailed connection status
+  // Note: Simple /api/health is registered in index.ts for fast deployment health checks
+  app.get("/api/status", (_req, res) => {
     res.status(200).json({
       status: "ok",
       whatsapp: connectionStatus,
