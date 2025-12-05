@@ -4,16 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 
 const app = express();
-const httpServer = createServer((req: any, res: any) => {
-  // Immediate health check response - bypass Express completely
-  if (req.url === "/" || req.url === "/api/health") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-    return;
-  }
-  // Pass all other requests to Express
-  app(req, res);
-});
+const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -67,14 +58,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check endpoints - must be registered FIRST and respond immediately
-// This ensures deployment health checks pass before any async setup
+// Health check endpoint - responds immediately for deployment checks
 app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
-
-// Root endpoint for immediate health check response - MUST be registered FIRST
-app.get("/", (_req, res) => res.status(200).send("OK"));
 
 // In production, serve static files
 // If static serving fails, add a fallback / handler
@@ -162,10 +149,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 // Start listening IMMEDIATELY - before any async setup
 const port = parseInt(process.env.PORT || "5000", 10);
-// Add immediate root endpoint for health checks - BEFORE server listens
-app.get("/", (_req, res) => {
-  res.status(200).send("OK");
-});
 
 httpServer.listen(
   {
