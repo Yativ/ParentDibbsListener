@@ -75,7 +75,7 @@ if (process.env.NODE_ENV === "production") {
   } catch (e) {
     console.error("[static] Failed to initialize static file serving:", e);
   }
-  
+
   // If static files failed to load, add fallback / handler
   if (!staticOk) {
     app.get("/", (_req, res) => {
@@ -91,19 +91,23 @@ if (process.env.NODE_ENV === "production") {
 } else {
   // Development only: loading state while Vite initializes
   let viteReady = false;
-  
+
   // Temporary loading handler for development - passes through to Vite once ready
   app.use((req, res, next) => {
     // Skip non-HTML requests and API routes
-    if (req.path.startsWith("/api") || req.path.startsWith("/socket.io") || req.path.includes(".")) {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/socket.io") ||
+      req.path.includes(".")
+    ) {
       return next();
     }
-    
+
     // If Vite is ready, let it handle the request
     if (viteReady) {
       return next();
     }
-    
+
     // Show loading page while Vite initializes
     res.status(200).type("html").send(`
       <!DOCTYPE html>

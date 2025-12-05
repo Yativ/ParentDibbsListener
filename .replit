@@ -7,25 +7,13 @@ channel = "stable-24_05"
 packages = ["chromium", "glib", "nss", "nspr", "at-spi2-atk", "cups", "dbus", "libdrm", "mesa", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "alsa-lib", "pango", "cairo"]
 
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "vm"
 build = ["npm", "run", "build"]
 run = ["npm", "run", "start"]
 
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 35467
-externalPort = 3000
-
-[[ports]]
-localPort = 42775
-externalPort = 3001
-
-[[ports]]
-localPort = 46437
-externalPort = 3002
 
 [env]
 PORT = "5000"

@@ -42,9 +42,6 @@ export function serveStatic(app: Express) {
   const indexPath = path.resolve(distPath, "index.html");
   
   // Pre-cache index.html for instant health check responses
-  if (fs.existsSync(indexPath)) {
-    cachedIndexHtml = fs.readFileSync(indexPath, "utf-8");
-  }
 
   // Serve root "/" with cached HTML for instant health check response
   // This returns 200 with the actual SPA HTML (not plain "OK" text)
