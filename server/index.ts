@@ -59,13 +59,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check endpoint - must be registered FIRST and respond immediately
+// Health check endpoints - must be registered FIRST and respond immediately
 // This ensures deployment health checks pass before any async setup
 app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
 // In production, serve static files immediately - no loader needed
+// serveStatic() caches index.html in memory for instant / responses
 if (process.env.NODE_ENV === "production") {
   serveStatic(app);
 } else {
