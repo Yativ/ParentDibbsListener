@@ -452,3 +452,15 @@
 2025/12/05-20:48:38.363 9f5 Delete type=2 #5790
 2025/12/05-20:48:38.363 9f5 Delete type=2 #5791
 2025/12/05-20:48:38.363 9f5 Delete type=2 #5793
+2025/12/05-20:52:14.242 9f4 Level-0 table #5806: started
+2025/12/05-20:52:14.277 9f4 Level-0 table #5806: 75454 bytes OK
+2025/12/05-20:52:14.291 9f4 Delete type=0 #5792
+2025/12/05-20:52:14.293 9f4 Manual compaction at level-0 from ' m\x01\x00\x00\x00' @ 72057594037927935 : 1 .. ' n\x01\x00\x00\x00' @ 0 : 0; will stop at ' m\x01\x00\x00\x05' @ 12174531 : 1
+2025/12/05-20:52:14.294 9f4 Compacting 1@0 + 2@1 files
+2025/12/05-20:52:14.309 9f4 Generated table #5807@0: 1997 keys, 37151 bytes
+2025/12/05-20:52:14.337 9f4 Generated table #5808@0: 583 keys, 26917 bytes
+2025/12/05-20:52:14.358 9f4 Generated table #5809@0: 1430 keys, 34207 bytes
+2025/12/05-20:52:14.358 9f4 Compacted 1@0 + 2@1 files => 98275 bytes
+2025/12/05-20:52:14.367 9f4 compacted to: files[ 0 3 46 5 0 0 0 ]
+2025/12/05-20:52:14.369 9f4 Delete type=2 #5806
+2025/12/05-20:52:14.370 9f4 Manual compaction at level-0 from ' m\x01\x00\x00\x05' @ 12174531 : 1 .. ' n\x01\x00\x00\x00' @ 0 : 0; will stop at (end)
