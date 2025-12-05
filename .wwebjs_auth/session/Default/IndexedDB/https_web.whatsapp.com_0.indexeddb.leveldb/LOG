@@ -464,3 +464,31 @@
 2025/12/05-20:52:14.367 9f4 compacted to: files[ 0 3 46 5 0 0 0 ]
 2025/12/05-20:52:14.369 9f4 Delete type=2 #5806
 2025/12/05-20:52:14.370 9f4 Manual compaction at level-0 from ' m\x01\x00\x00\x05' @ 12174531 : 1 .. ' n\x01\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/12/05-20:54:48.801 a32 Compacting 1@1 + 11@2 files
+2025/12/05-20:54:48.895 a32 Generated table #5810@1: 9235 keys, 2189470 bytes
+2025/12/05-20:54:48.970 a32 Generated table #5811@1: 7464 keys, 2186600 bytes
+2025/12/05-20:54:49.043 a32 Generated table #5812@1: 22856 keys, 2213502 bytes
+2025/12/05-20:54:49.141 a32 Generated table #5813@1: 22805 keys, 2278301 bytes
+2025/12/05-20:54:49.217 a32 Generated table #5814@1: 14237 keys, 2296914 bytes
+2025/12/05-20:54:49.325 a32 Generated table #5815@1: 23008 keys, 2272311 bytes
+2025/12/05-20:54:49.471 a32 Generated table #5816@1: 22861 keys, 2290215 bytes
+2025/12/05-20:54:49.569 a32 Generated table #5817@1: 18456 keys, 2287174 bytes
+2025/12/05-20:54:49.678 a32 Generated table #5818@1: 54956 keys, 2216202 bytes
+2025/12/05-20:54:49.777 a32 Generated table #5819@1: 57629 keys, 2227295 bytes
+2025/12/05-20:54:49.904 a32 Generated table #5820@1: 6769 keys, 315866 bytes
+2025/12/05-20:54:49.904 a32 Compacted 1@1 + 11@2 files => 22773850 bytes
+2025/12/05-20:54:49.915 a32 compacted to: files[ 0 2 46 5 0 0 0 ]
+2025/12/05-20:54:49.916 a32 Delete type=2 #5723
+2025/12/05-20:54:49.916 a32 Delete type=2 #5724
+2025/12/05-20:54:49.916 a32 Delete type=2 #5740
+2025/12/05-20:54:49.916 a32 Delete type=2 #5741
+2025/12/05-20:54:49.917 a32 Delete type=2 #5753
+2025/12/05-20:54:49.917 a32 Delete type=2 #5754
+2025/12/05-20:54:49.917 a32 Delete type=2 #5755
+2025/12/05-20:54:49.917 a32 Delete type=2 #5756
+2025/12/05-20:54:49.917 a32 Delete type=2 #5759
+2025/12/05-20:54:49.917 a32 Delete type=2 #5760
+2025/12/05-20:54:49.917 a32 Delete type=2 #5761
+2025/12/05-20:54:49.917 a32 Delete type=2 #5762
+2025/12/05-20:54:49.917 a32 Delete type=2 #5767
+2025/12/05-20:54:49.917 a32 Delete type=2 #5807
