@@ -65,56 +65,56 @@ app.get("/api/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// In production, serve static files immediately for health check at root
+// In production, serve static files immediately - no loader needed
 if (process.env.NODE_ENV === "production") {
   serveStatic(app);
-}
-
-// Development loading state - controlled by viteReady flag
-let viteReady = process.env.NODE_ENV === "production"; // Production is always "ready"
-
-// Temporary loading handler for development - passes through to Vite once ready
-app.use((req, res, next) => {
-  // Skip non-HTML requests and API routes
-  if (req.path.startsWith("/api") || req.path.startsWith("/socket.io") || req.path.includes(".")) {
-    return next();
-  }
+} else {
+  // Development only: loading state while Vite initializes
+  let viteReady = false;
   
-  // If Vite is ready, let it handle the request
-  if (viteReady) {
-    return next();
-  }
-  
-  // Show loading page while Vite initializes
-  res.status(200).type("html").send(`
-    <!DOCTYPE html>
-    <html lang="he" dir="rtl">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>כוננות קל - טוען...</title>
-        <style>
-          body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: system-ui, sans-serif; background: #0a0a0a; color: #fff; }
-          .loader { text-align: center; }
-          h1 { font-size: 2rem; margin-bottom: 1rem; }
-          p { opacity: 0.7; }
-        </style>
-        <script>setTimeout(() => location.reload(), 1000);</script>
-      </head>
-      <body>
-        <div class="loader">
-          <h1>כוננות קל</h1>
-          <p>טוען...</p>
-        </div>
-      </body>
-    </html>
-  `);
-});
+  // Temporary loading handler for development - passes through to Vite once ready
+  app.use((req, res, next) => {
+    // Skip non-HTML requests and API routes
+    if (req.path.startsWith("/api") || req.path.startsWith("/socket.io") || req.path.includes(".")) {
+      return next();
+    }
+    
+    // If Vite is ready, let it handle the request
+    if (viteReady) {
+      return next();
+    }
+    
+    // Show loading page while Vite initializes
+    res.status(200).type("html").send(`
+      <!DOCTYPE html>
+      <html lang="he" dir="rtl">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>כוננות קל - טוען...</title>
+          <style>
+            body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: system-ui, sans-serif; background: #0a0a0a; color: #fff; }
+            .loader { text-align: center; }
+            h1 { font-size: 2rem; margin-bottom: 1rem; }
+            p { opacity: 0.7; }
+          </style>
+          <script>setTimeout(() => location.reload(), 1000);</script>
+        </head>
+        <body>
+          <div class="loader">
+            <h1>כוננות קל</h1>
+            <p>טוען...</p>
+          </div>
+        </body>
+      </html>
+    `);
+  });
 
-// Export setter for viteReady flag
-export function setViteReady() {
-  viteReady = true;
-  log("Vite is ready");
+  // Export setter for viteReady flag (dev only)
+  (global as any).setViteReady = () => {
+    viteReady = true;
+    log("Vite is ready");
+  };
 }
 
 // Error handler
@@ -147,7 +147,10 @@ httpServer.listen(
   if (process.env.NODE_ENV !== "production") {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
-    setViteReady(); // Signal that Vite is ready to handle requests
+    // Signal that Vite is ready to handle requests
+    if ((global as any).setViteReady) {
+      (global as any).setViteReady();
+    }
   }
 
   log("Server fully initialized");
