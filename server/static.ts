@@ -4,17 +4,40 @@ import path from "path";
 
 let cachedIndexHtml: string | null = null;
 
-export function serveStatic(app: Express) {
-  // Get the directory of the running script (dist/index.cjs -> dist/)
-  // Then resolve 'public' from there (dist/ + public = dist/public/)
-  // This works regardless of working directory, which may differ in deployment environments
-  const scriptDir = path.dirname(process.argv[1]);
-  const distPath = path.resolve(scriptDir, "public");
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
+function findStaticDir(): string {
+  // Try multiple strategies to find the static files directory
+  // This handles different deployment environments (local, Replit VM, etc.)
+  
+  const candidates = [
+    // Strategy 1: Use __dirname (for CJS bundles, this is the bundle directory)
+    // In production: dist/index.cjs -> __dirname = dist/ -> dist/public
+    path.resolve(__dirname, "public"),
+    // Strategy 2: Relative to the running script (dist/index.cjs -> dist/public)
+    path.resolve(path.dirname(process.argv[1]), "public"),
+    // Strategy 3: Relative to working directory (project root -> dist/public)
+    path.resolve(process.cwd(), "dist", "public"),
+    // Strategy 4: Relative to working directory without dist (in case cwd is dist/)
+    path.resolve(process.cwd(), "public"),
+  ];
+  
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, "index.html"))) {
+      console.log(`[static] Using static directory: ${candidate}`);
+      return candidate;
+    }
   }
+  
+  // Log all attempted paths for debugging
+  console.error("[static] Could not find static directory. Tried:");
+  candidates.forEach(c => console.error(`  - ${c} (exists: ${fs.existsSync(c)})`));
+  
+  throw new Error(
+    `Could not find the build directory with index.html. Tried: ${candidates.join(", ")}`,
+  );
+}
+
+export function serveStatic(app: Express) {
+  const distPath = findStaticDir();
 
   const indexPath = path.resolve(distPath, "index.html");
   
