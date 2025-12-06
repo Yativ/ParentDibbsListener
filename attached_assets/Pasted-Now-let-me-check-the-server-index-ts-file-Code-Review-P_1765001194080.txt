@@ -1,0 +1,111 @@
+Now let me check the server/index.ts file:# Code Review - ParentDibbsListener Repository
+
+I've reviewed the main source files in your repository. Here are the issues I found:
+
+## 🔴 Critical Issues
+
+### 1. **Type Safety Issue in `server/routes. ts` (Line 357)**
+```typescript
+await sendGroupsToClients(io! );
+```
+**Problem:** Using the non-null assertion operator (`!`) on `io` can mask potential null reference errors. If `io` is null at runtime, this will crash. 
+
+**Recommendation:** Add a proper null check:
+```typescript
+if (io) {
+  await sendGroupsToClients(io);
+}
+```
+
+### 2. **Type Safety Issue in `server/routes.ts` (Line 365, 394)**
+```typescript
+await ensureWhatsAppClient(io!);
+await sendGroupsToClients(io!);
+```
+**Problem:** Same issue - using non-null assertion operator without validation.
+
+**Recommendation:** Verify `io` is initialized before using these methods.
+
+---
+
+## ⚠️ Moderate Issues
+
+### 3. **Error Handling in `server/routes. ts` (Line 286)**
+```typescript
+whatsappClient.initialize(). catch((error: Error) => {
+  log(`Error initializing WhatsApp: ${error}`, "whatsapp");
+  connectionStatus = "disconnected";
+  socketIO.emit("connection_status", connectionStatus);
+});
+```
+**Problem:** The promise returned by `. initialize(). catch()` is not awaited or returned.  If initialization fails, the function returns before the error is caught.
+
+**Recommendation:** Either await this or return the promise:
+```typescript
+await whatsappClient.initialize(). catch((error: Error) => {
+  // ... error handling
+});
+```
+
+### 4. **Potential Memory Leak in `server/routes.ts` (Line 64)**
+```typescript
+if (isInitializing && initPromise) {
+  return initPromise;
+}
+```
+**Problem:** If initialization fails and is retried multiple times, old failed promises might be referenced.  The `initPromise` should be cleared on failure.
+
+---
+
+## 📋 Minor Issues
+
+### 5. **Unused Variable in `server/routes.ts` (Line 52)**
+```typescript
+const module = (pkg as any).default || pkg;
+```
+**Problem:** Variable `module` is assigned but the logic immediately accesses properties from `module` without proper validation.
+
+**Recommendation:** Add validation:
+```typescript
+const module = (pkg as any).default || pkg;
+if (!module. Client || !module.LocalAuth) {
+  throw new Error("Failed to load WhatsApp module");
+}
+```
+
+### 6. **Inconsistent Error Logging**
+Multiple places use string interpolation for error logging:
+```typescript
+log(`Error: ${error}`, "whatsapp");
+```
+**Problem:** If `error` is an object, this may not display the full error message.
+
+**Recommendation:** Use:
+```typescript
+log(`Error: ${error instanceof Error ? error.message : String(error)}`, "whatsapp");
+```
+
+### 7. **No Validation in `server/routes.ts` (Line 382)**
+```typescript
+storage.saveSettings(settings);
+```
+**Problem:** Settings from socket events are not validated against the schema before saving.
+
+**Recommendation:** Add Zod validation:
+```typescript
+const validatedSettings = settingsSchema.parse(settings);
+storage.saveSettings(validatedSettings);
+```
+
+---
+
+## ✅ Positive Observations
+
+- Good separation of concerns (storage, routes, schema)
+- Proper use of TypeScript types
+- Socket.io connection handling is well-structured
+- Error messages include contextual information
+
+---
+
+Would you like me to create a GitHub issue for any of these problems or help you fix specific issues? 

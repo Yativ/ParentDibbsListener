@@ -50,6 +50,9 @@ async function loadWhatsAppModule() {
   const pkg = await import("whatsapp-web.js");
   // Access from default export for ESM compatibility
   const module = (pkg as any).default || pkg;
+  if (!module.Client || !module.LocalAuth) {
+    throw new Error("Failed to load WhatsApp module - Client or LocalAuth not found");
+  }
   Client = module.Client;
   LocalAuth = module.LocalAuth;
   return { Client, LocalAuth };
@@ -139,7 +142,8 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
       socketIO.emit("qr", qrDataUrl);
       socketIO.emit("connection_status", connectionStatus);
     } catch (error) {
-      log(`Error generating QR: ${error}`, "whatsapp");
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log(`Error generating QR: ${errorMsg}`, "whatsapp");
     }
   });
 
@@ -161,7 +165,8 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
 
       await sendGroupsToClients(socketIO);
     } catch (error) {
-      log(`Error on ready: ${error}`, "whatsapp");
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log(`Error on ready: ${errorMsg}`, "whatsapp");
     }
   });
 
@@ -221,7 +226,8 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
         const contact = await msg.getContact();
         senderName = contact?.pushname || contact?.name || contact?.number || "לא ידוע";
       } catch (contactError) {
-        log(`Could not get contact info: ${contactError}`, "whatsapp");
+        const errorMsg = contactError instanceof Error ? contactError.message : String(contactError);
+        log(`Could not get contact info: ${errorMsg}`, "whatsapp");
         // Try to get sender info from message directly
         try {
           const senderId = msg.author || msg.from;
@@ -266,7 +272,8 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
             log(`Could not find chat for ${myNumber}`, "whatsapp");
           }
         } catch (sendError) {
-          log(`Error sending WhatsApp alert: ${sendError}`, "whatsapp");
+          const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
+          log(`Error sending WhatsApp alert: ${errorMsg}`, "whatsapp");
         }
       } else {
         log(`No user phone number configured, cannot send WhatsApp alert`, "whatsapp");
@@ -276,18 +283,23 @@ async function initWhatsAppClient(socketIO: SocketIOServer) {
       socketIO.emit("new_alert", alert);
       log(`Alert emitted to dashboard`, "whatsapp");
     } catch (error) {
-      log(`Error processing message: ${error}`, "whatsapp");
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log(`Error processing message: ${errorMsg}`, "whatsapp");
     }
   });
 
   connectionStatus = "connecting";
   socketIO.emit("connection_status", connectionStatus);
   
-  whatsappClient.initialize().catch((error: Error) => {
-    log(`Error initializing WhatsApp: ${error}`, "whatsapp");
+  // Initialize WhatsApp client - handle errors properly
+  try {
+    await whatsappClient.initialize();
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log(`Error initializing WhatsApp: ${errorMsg}`, "whatsapp");
     connectionStatus = "disconnected";
     socketIO.emit("connection_status", connectionStatus);
-  });
+  }
 
   return whatsappClient;
 }
@@ -311,7 +323,8 @@ async function sendGroupsToClients(socketIO: SocketIOServer) {
     log(`Found ${groups.length} groups`, "whatsapp");
     socketIO.emit("groups", groups);
   } catch (error) {
-    log(`Error fetching groups: ${error}`, "whatsapp");
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log(`Error fetching groups: ${errorMsg}`, "whatsapp");
   }
 }
 
@@ -353,18 +366,23 @@ export async function registerRoutes(
       socket.emit("qr", cachedQrCode);
     }
 
-    if (connectionStatus === "connected") {
-      await sendGroupsToClients(io!);
+    if (connectionStatus === "connected" && io) {
+      await sendGroupsToClients(io);
     }
 
     // Handle manual WhatsApp connection request
     socket.on("start_whatsapp", async () => {
       log("User requested WhatsApp connection", "socket.io");
+      if (!io) {
+        socket.emit("error", "Socket.IO not initialized");
+        return;
+      }
       if (connectionStatus === "disconnected" && !isInitializing) {
         try {
-          await ensureWhatsAppClient(io!);
+          await ensureWhatsAppClient(io);
         } catch (error) {
-          log(`Error starting WhatsApp: ${error}`, "socket.io");
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          log(`Error starting WhatsApp: ${errorMsg}`, "socket.io");
           socket.emit("error", "Failed to start WhatsApp connection");
         }
       } else if (isInitializing) {
@@ -376,6 +394,16 @@ export async function registerRoutes(
 
     socket.on("save_settings", (settings: Settings) => {
       try {
+        // Validate settings before saving
+        if (!settings || typeof settings !== 'object') {
+          throw new Error("Invalid settings format");
+        }
+        if (!Array.isArray(settings.watchedGroups)) {
+          settings.watchedGroups = [];
+        }
+        if (!Array.isArray(settings.alertKeywords)) {
+          settings.alertKeywords = [];
+        }
         if (myNumber) {
           settings.myNumber = myNumber;
         }
@@ -384,14 +412,17 @@ export async function registerRoutes(
         io?.emit("settings", settings);
         socket.emit("settings_saved");
       } catch (error) {
-        log(`Error saving settings: ${error}`, "socket.io");
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log(`Error saving settings: ${errorMsg}`, "socket.io");
         socket.emit("error", "Failed to save settings");
       }
     });
 
     socket.on("refresh_groups", async () => {
       log("Refreshing groups...", "socket.io");
-      await sendGroupsToClients(io!);
+      if (io) {
+        await sendGroupsToClients(io);
+      }
     });
 
     socket.on("disconnect", () => {
