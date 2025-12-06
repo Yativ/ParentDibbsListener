@@ -158,9 +158,6 @@ httpServer.listen(
   },
   () => {
     log(`serving on port ${port}`);
-
-      })();
-    }
   },
 );
 
@@ -168,23 +165,6 @@ httpServer.listen(
 (async () => {
   // Register API routes and socket.io (async operations)
   await registerRoutes(httpServer, app);
-
-  // Auto-initialize WhatsApp in production AFTER registerRoutes completes
-  if (process.env.REPL_SLUG || process.env.NODE_ENV === 'production') {
-    try {
-      log('Auto-initializing WhatsApp for production...');
-      const { ensureWhatsAppClient } = await import('./routes.js');
-      const { io } = await import('./routes.js');
-      if (io) {
-        await ensureWhatsAppClient(io);
-        log('✅ WhatsApp initialized successfully');
-      } else {
-        log('⚠️ Socket.IO not available yet');
-      }
-    } catch (error) {
-      log(`❌ Failed to auto-initialize WhatsApp: ${error}`);
-    }
-  }
 
   // In development, setup Vite after routes
   if (process.env.NODE_ENV !== "production") {
