@@ -1,14 +1,35 @@
-# כוננות קל - WhatsApp Group Monitor
+# כוננות קל - WhatsApp Group Monitor (Multi-User SaaS)
 
 ## Overview
 
-כוננות קל (Easy Standby) is a WhatsApp monitoring dashboard that allows users to track specific groups for keyword mentions and receive real-time private message alerts. The application provides a web-based interface in Hebrew for managing WhatsApp group subscriptions, defining alert keywords, and viewing triggered alerts when important messages are detected.
+כוננות קל (Easy Standby) is a **multi-user SaaS** WhatsApp monitoring platform that allows each user to connect their own WhatsApp, track specific groups for keyword mentions, and receive real-time private message alerts. The application provides a web-based interface in Hebrew for managing WhatsApp group subscriptions, defining alert keywords, and viewing triggered alerts when important messages are detected.
 
 The system uses WhatsApp Web.js to connect to WhatsApp via QR code authentication, monitors selected groups in real-time, and sends private WhatsApp messages when keywords are matched in group conversations. The entire UI is in Hebrew with RTL (right-to-left) support.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+
+## Multi-User Architecture
+
+This is a **multi-tenant SaaS application** where:
+- Each user creates an account via Replit Auth (Google, GitHub, Apple, or email)
+- Each user connects their own WhatsApp via individual QR code scan
+- User data is completely isolated (settings, groups, keywords, alerts)
+- Socket.IO uses per-user rooms for private real-time updates
+- Admin users can view all user accounts and their status
+
+### Authentication
+- **Provider:** Replit Auth (OIDC)
+- **Login Methods:** Google/Gmail, GitHub, Apple, Email/Password
+- **Session:** PostgreSQL-backed express-session
+- **Routes:** `/api/login`, `/api/logout`, `/api/auth/user`
+
+### Admin Features
+- Admin dashboard at `/admin` route
+- View all registered users
+- Monitor WhatsApp connection status per user
+- Toggle admin privileges (requires direct DB update)
 
 ## System Architecture
 
@@ -28,29 +49,28 @@ Preferred communication style: Simple, everyday language.
 - Inter font family from Google Fonts
 - Mobile-first responsive design
 
+**Pages:**
+- `/` - Landing page with marketing content and login CTA
+- `/dashboard` - Main app (requires auth) - WhatsApp connection, groups, keywords, alerts
+- `/admin` - Admin panel (requires auth + isAdmin) - User management
+
 **State Management Strategy:**
 - React Query handles server state with infinite stale time by default
 - Socket.IO manages real-time connection state and events
 - Local React state (useState) for UI interactions
-- No global state management library (Redux/Zustand) - keeps complexity minimal
-
-**Design Decisions:**
-- Single-page application with dashboard as the primary view
-- Real-time updates via WebSocket connections for connection status, groups, and alerts
-- Component-based architecture with reusable Shadcn UI components
-- TypeScript path aliases (@/, @shared/) for clean imports
+- useAuth hook provides authentication state
 
 ### Backend Architecture
 
 **Technology Stack:**
 - Node.js with Express.js server
 - TypeScript throughout the backend
+- PostgreSQL with Drizzle ORM
 - Socket.IO for WebSocket real-time communication
 - WhatsApp Web.js for WhatsApp integration
-- File-based storage for settings (settings.json)
 
 **Server Structure:**
-- Express middleware handles JSON parsing and raw body access (for webhook compatibility)
+- Express middleware handles JSON parsing and session management
 - HTTP server wraps Express to enable Socket.IO integration
 - Separate routing and static file serving modules
 - Development mode includes Vite middleware for HMR
@@ -58,39 +78,41 @@ Preferred communication style: Simple, everyday language.
 **Fast Startup Architecture (for VM deployment):**
 - Health check endpoint `/api/health` registered synchronously BEFORE httpServer.listen()
 - In production: static files served synchronously before listening
-- In development: temporary loading page shown until Vite is ready (controlled by viteReady flag)
+- In development: temporary loading page shown until Vite is ready
 - Server starts listening IMMEDIATELY on port 5000
-- Async setup (registerRoutes, socket.io, Vite) happens AFTER server is already listening
-- This ensures deployment health checks pass instantly even if async setup takes time
-- WhatsApp client is lazy-loaded on user action, not at server startup
-- `/api/status` endpoint provides detailed WhatsApp connection status
+- Async setup happens AFTER server is already listening
+- This ensures deployment health checks pass instantly
 
-**WhatsApp Integration Design:**
-- WhatsApp Web.js client with LocalAuth strategy for persistent sessions
-- Puppeteer runs headless Chromium for WhatsApp Web automation
-- QR code generation via qrcode library for authentication
-- Session data stored in .wwebjs_auth directory
-- Client lifecycle management through Socket.IO events
+**WhatsApp Session Manager:**
+- `WhatsAppSessionManager` class manages multiple isolated sessions
+- Each user gets their own WhatsApp client instance
+- Session data stored in `.wwebjs_auth/<userId>` directories
+- LocalAuth strategy for persistent sessions per user
+- Automatic client cleanup on disconnect
 
-**Real-time Communication:**
-- Socket.IO handles bidirectional events between client and server
-- Events: connection status updates, QR code delivery, group list sync, alert notifications
-- Server emits events on WhatsApp client state changes
-- Client requests trigger server actions (save settings, fetch groups)
+**Socket.IO Multi-User Design:**
+- Users must authenticate via `socket.emit("authenticate", userId)`
+- Each user joins a private room `user:${userId}`
+- Events are emitted only to the authenticated user's room
+- Events: `connection_status`, `qr_code`, `groups`, `settings`, `alerts`, `new_alert`
 
 **Storage Strategy:**
-- File-based JSON storage for user settings (watched groups, keywords, phone number)
-- In-memory storage for alerts with MAX_ALERTS limit (100)
-- No database currently used - designed for simple single-user deployment
-- Settings persist across restarts via settings.json file
+- PostgreSQL database for all persistent data
+- Drizzle ORM for type-safe database operations
+- Per-user data isolation via userId foreign keys
+- Session storage in database (connect-pg-simple)
 
-**Message Monitoring Logic:**
-- Listens to WhatsApp 'message_create' events
-- Filters messages to only process group messages
-- Checks if message is from a watched group
-- Performs case-insensitive keyword matching
-- Sends private WhatsApp message to user when match found
-- Stores alert metadata in memory
+### Database Schema (PostgreSQL + Drizzle ORM)
+
+**Tables:**
+- `users` - User accounts (id, email, firstName, lastName, profileImageUrl, isAdmin, createdAt)
+- `sessions` - Express session storage
+- `user_settings` - Per-user settings (userId, watchedGroups, alertKeywords)
+- `alerts` - Alert history (userId, groupId, groupName, matchedKeyword, messageText, senderName, timestamp, alertSent)
+
+**Key Relationships:**
+- All tables except `users` have a `userId` foreign key
+- Cascade delete on user removal
 
 ### Build and Deployment
 
@@ -98,83 +120,83 @@ Preferred communication style: Simple, everyday language.
 - Custom build script (script/build.ts) using esbuild and Vite
 - Client built with Vite to dist/public
 - Server bundled with esbuild to dist/index.cjs
-- Selective dependency bundling (allowlist) to reduce syscalls and improve cold starts
-- Production mode serves static files from dist/public
+- Selective dependency bundling to reduce syscalls and improve cold starts
+
+**Deployment Configuration:**
+- **Deployment Target:** VM (required for WhatsApp Web.js / Puppeteer)
+- VM provides persistent filesystem for session storage
+- Cannot use autoscale (stateful WhatsApp sessions require persistence)
 
 **Development vs Production:**
 - Development: Vite dev server with HMR, middleware mode integration
-- Development: Replit-specific plugins (cartographer, dev-banner, runtime-error-modal)
 - Production: Pre-built static assets served by Express
 - Environment detection via NODE_ENV
-
-### Data Schema
-
-**Type Definitions (shared/schema.ts):**
-- Zod schemas define runtime validation and TypeScript types
-- WhatsAppGroup: id, name, isGroup flag
-- Settings: watched group IDs array, alert keywords array, user phone number
-- Alert: id, group info, matched keyword, message details, sender, timestamp, alert sent status
-- ConnectionStatus: enum of disconnected, connecting, qr_ready, connected
-
-**Shared Types:**
-- Schema definitions shared between client and server via @shared path alias
-- Ensures type safety across the full stack
-- Zod provides both validation and type inference
-
-### Third-Party Integration Points
-
-**WhatsApp Web.js:**
-- Requires Chromium binary (dynamically detected via CHROMIUM_PATH env var or system lookup)
-- Uses LocalAuth for session persistence
-- Puppeteer args configured for headless operation in containerized environments
-- No official API - uses WhatsApp Web reverse engineering
-- Chromium path detection checks: environment variable, then common paths (chromium, chromium-browser, google-chrome)
-
-**Design System:**
-- Material Design 3 principles applied through custom Tailwind configuration
-- New York style variant of Shadcn/ui components
-- Custom CSS variables for theming (light mode defined, dark mode structure present)
 
 ## External Dependencies
 
 ### Database
-- **Current:** File-based JSON storage (settings.json)
-- **Future Consideration:** PostgreSQL with Drizzle ORM (configuration present in drizzle.config.ts)
-- **Database Provider:** Neon serverless Postgres (@neondatabase/serverless package installed)
-- **Schema Location:** shared/schema.ts (currently only Zod schemas, no Drizzle tables defined yet)
+- **Provider:** PostgreSQL (Neon serverless via @neondatabase/serverless)
+- **ORM:** Drizzle ORM with drizzle-zod for validation
+- **Session Store:** connect-pg-simple
+
+### Authentication
+- **Provider:** Replit Auth (OIDC)
+- **Library:** openid-client
+- **Session:** express-session with PostgreSQL backend
 
 ### WhatsApp Integration
 - **Library:** whatsapp-web.js
 - **Authentication:** QR code scan via WhatsApp mobile app
-- **Session Management:** LocalAuth strategy with persistent file storage
+- **Session Management:** LocalAuth strategy with per-user directories
 - **Browser Automation:** Puppeteer with Chromium
-- **Limitations:** Unofficial library, subject to WhatsApp Web changes
+- **Requirements:** Chromium binary (installed via Nix packages)
 
 ### Real-time Communication
 - **Library:** Socket.IO (server and client)
 - **Transport:** WebSocket with fallback to HTTP long-polling
-- **Events:** Custom event-driven architecture for connection state, groups, and alerts
+- **Architecture:** Per-user rooms for isolated event delivery
 
 ### UI Component Library
 - **Framework:** Radix UI primitives via Shadcn/ui
 - **Components:** 40+ accessible, unstyled component primitives
-- **Customization:** Tailwind CSS with design tokens defined in CSS variables
+- **Customization:** Tailwind CSS with design tokens
 - **Icons:** Lucide React
-
-### Styling and Design
-- **CSS Framework:** Tailwind CSS with PostCSS
-- **Font Loading:** Google Fonts CDN (Inter font family)
-- **Design System:** Custom tokens extending Shadcn defaults
-- **Responsive:** Mobile-first breakpoints
 
 ### Build Tools
 - **Frontend Bundler:** Vite with React plugin
 - **Backend Bundler:** esbuild
-- **TypeScript Compiler:** tsc for type checking (noEmit mode)
-- **Development:** Replit-specific Vite plugins for enhanced DX
+- **TypeScript Compiler:** tsc for type checking
 
-### Other Integrations
-- **QR Code Generation:** qrcode library for WhatsApp authentication codes
-- **Date Formatting:** date-fns for timestamp display
-- **Validation:** Zod for runtime schema validation
-- **Form Handling:** React Hook Form with Zod resolver
+## File Structure
+
+```
+├── client/src/
+│   ├── App.tsx              # Router and providers
+│   ├── pages/
+│   │   ├── landing.tsx      # Public landing page
+│   │   ├── dashboard.tsx    # Main app (authenticated)
+│   │   ├── admin.tsx        # Admin panel
+│   │   └── not-found.tsx    # 404 page
+│   ├── hooks/
+│   │   └── useAuth.ts       # Authentication hook
+│   └── components/ui/       # Shadcn components
+├── server/
+│   ├── index.ts             # Server entry point
+│   ├── routes.ts            # API routes + Socket.IO
+│   ├── replitAuth.ts        # Replit Auth setup
+│   ├── storage.ts           # Database operations
+│   ├── whatsappManager.ts   # Multi-user WhatsApp sessions
+│   └── db.ts                # Drizzle database connection
+├── shared/
+│   └── schema.ts            # Database schema + types
+└── .replit                  # Deployment config (VM target)
+```
+
+## Admin Operations
+
+To make a user an admin, update the database directly:
+```sql
+UPDATE users SET is_admin = true WHERE email = 'admin@example.com';
+```
+
+The first user to sign up should be designated as admin for initial setup.
