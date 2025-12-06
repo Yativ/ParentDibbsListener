@@ -1,76 +1,154 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { randomUUID } from "crypto";
-import type { Settings, Alert } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
+import {
+  users,
+  userSettings,
+  alerts,
+  type User,
+  type UpsertUser,
+  type UserSettings,
+  type InsertUserSettings,
+  type Alert,
+  type InsertAlert,
+  type Settings,
+} from "@shared/schema";
 
-const SETTINGS_FILE = "./settings.json";
 const MAX_ALERTS = 100;
 
 export interface IStorage {
-  getSettings(): Settings;
-  saveSettings(settings: Settings): void;
-  getAlerts(): Alert[];
-  addAlert(alert: Omit<Alert, "id">): Alert;
-  clearAlerts(): void;
+  // User operations (required for Replit Auth)
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+  getAllUsers(): Promise<User[]>;
+  
+  // User settings operations
+  getUserSettings(userId: string): Promise<Settings>;
+  saveUserSettings(userId: string, settings: Settings): Promise<void>;
+  updateWhatsAppStatus(userId: string, status: string): Promise<void>;
+  
+  // Alert operations
+  getAlerts(userId: string): Promise<Alert[]>;
+  addAlert(userId: string, alertData: Omit<InsertAlert, "id" | "userId">): Promise<Alert>;
+  clearAlerts(userId: string): Promise<void>;
 }
 
-export class FileStorage implements IStorage {
-  private settings: Settings;
-  private alerts: Alert[];
-
-  constructor() {
-    this.settings = this.loadSettings();
-    this.alerts = [];
+export class DatabaseStorage implements IStorage {
+  // User operations (required for Replit Auth)
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
-  private loadSettings(): Settings {
-    try {
-      if (existsSync(SETTINGS_FILE)) {
-        const data = readFileSync(SETTINGS_FILE, "utf-8");
-        return JSON.parse(data);
-      }
-    } catch (error) {
-      console.error("Error loading settings:", error);
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  // User settings operations
+  async getUserSettings(userId: string): Promise<Settings> {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    
+    if (!settings) {
+      return {
+        watchedGroups: [],
+        alertKeywords: [],
+        myNumber: undefined,
+      };
     }
+    
     return {
-      watchedGroups: [],
-      alertKeywords: [],
-      myNumber: undefined,
+      watchedGroups: settings.watchedGroups || [],
+      alertKeywords: settings.alertKeywords || [],
+      myNumber: settings.myNumber || undefined,
     };
   }
 
-  getSettings(): Settings {
-    return this.settings;
-  }
-
-  saveSettings(settings: Settings): void {
-    this.settings = settings;
-    try {
-      writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-    } catch (error) {
-      console.error("Error saving settings:", error);
-      throw error;
+  async saveUserSettings(userId: string, settings: Settings): Promise<void> {
+    const existing = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    
+    if (existing.length > 0) {
+      await db
+        .update(userSettings)
+        .set({
+          watchedGroups: settings.watchedGroups,
+          alertKeywords: settings.alertKeywords,
+          myNumber: settings.myNumber,
+          updatedAt: new Date(),
+        })
+        .where(eq(userSettings.userId, userId));
+    } else {
+      await db.insert(userSettings).values({
+        userId,
+        watchedGroups: settings.watchedGroups,
+        alertKeywords: settings.alertKeywords,
+        myNumber: settings.myNumber,
+      });
     }
   }
 
-  getAlerts(): Alert[] {
-    return this.alerts;
+  async updateWhatsAppStatus(userId: string, status: string): Promise<void> {
+    const existing = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    
+    if (existing.length > 0) {
+      await db
+        .update(userSettings)
+        .set({ whatsappStatus: status, updatedAt: new Date() })
+        .where(eq(userSettings.userId, userId));
+    } else {
+      await db.insert(userSettings).values({
+        userId,
+        whatsappStatus: status,
+      });
+    }
   }
 
-  addAlert(alertData: Omit<Alert, "id">): Alert {
-    const alert: Alert = {
-      ...alertData,
-      id: randomUUID(),
-    };
-    this.alerts.unshift(alert);
-    if (this.alerts.length > MAX_ALERTS) {
-      this.alerts = this.alerts.slice(0, MAX_ALERTS);
-    }
+  // Alert operations
+  async getAlerts(userId: string): Promise<Alert[]> {
+    return await db
+      .select()
+      .from(alerts)
+      .where(eq(alerts.userId, userId))
+      .orderBy(desc(alerts.timestamp))
+      .limit(MAX_ALERTS);
+  }
+
+  async addAlert(userId: string, alertData: Omit<InsertAlert, "id" | "userId">): Promise<Alert> {
+    const [alert] = await db
+      .insert(alerts)
+      .values({
+        ...alertData,
+        userId,
+      })
+      .returning();
     return alert;
   }
 
-  clearAlerts(): void {
-    this.alerts = [];
+  async clearAlerts(userId: string): Promise<void> {
+    await db.delete(alerts).where(eq(alerts.userId, userId));
   }
 }
 
-export const storage = new FileStorage();
+export const storage = new DatabaseStorage();

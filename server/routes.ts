@@ -1,346 +1,128 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
-import qrcode from "qrcode";
-import { execSync } from "child_process";
 import { storage } from "./storage";
-import { log } from "./index";
-import type { WhatsAppGroup, Settings, ConnectionStatus } from "@shared/schema";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import {
+  setSocketIO,
+  initializeUserWhatsApp,
+  getUserStatus,
+  getUserQRCode,
+  getUserGroups,
+  refreshUserGroups,
+  disconnectUserWhatsApp,
+  joinUserRoom,
+} from "./whatsappManager";
+import type { Settings } from "@shared/schema";
 
-function findChromiumPath(): string | undefined {
-  if (process.env.CHROMIUM_PATH) {
-    return process.env.CHROMIUM_PATH;
-  }
-  
-  const possiblePaths = [
-    "chromium",
-    "chromium-browser",
-    "google-chrome",
-    "google-chrome-stable",
-  ];
-  
-  for (const cmd of possiblePaths) {
-    try {
-      const path = execSync(`which ${cmd}`, { encoding: "utf-8" }).trim();
-      if (path) {
-        log(`Found Chromium at: ${path}`, "whatsapp");
-        return path;
-      }
-    } catch {
-      continue;
-    }
-  }
-  
-  return undefined;
-}
+const log = (message: string, prefix = "server") => {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour12: true,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  console.log(`${formattedTime} [${prefix}] ${message}`);
+};
 
-let whatsappClient: any = null;
 let io: SocketIOServer | null = null;
-let connectionStatus: ConnectionStatus = "disconnected";
-let myNumber: string | undefined = undefined;
-let Client: any = null;
-let LocalAuth: any = null;
-let cachedQrCode: string | null = null;
-let isInitializing: boolean = false;
-let initPromise: Promise<any> | null = null;
-
-async function loadWhatsAppModule() {
-  if (Client && LocalAuth) return { Client, LocalAuth };
-  
-  const pkg = await import("whatsapp-web.js");
-  // Access from default export for ESM compatibility
-  const module = (pkg as any).default || pkg;
-  if (!module.Client || !module.LocalAuth) {
-    throw new Error("Failed to load WhatsApp module - Client or LocalAuth not found");
-  }
-  Client = module.Client;
-  LocalAuth = module.LocalAuth;
-  return { Client, LocalAuth };
-}
-
-async function ensureWhatsAppClient(socketIO: SocketIOServer): Promise<any> {
-  // Already connected
-  if (whatsappClient && connectionStatus === "connected") {
-    return whatsappClient;
-  }
-  
-  // Already initializing - wait for existing promise
-  if (isInitializing && initPromise) {
-    return initPromise;
-  }
-  
-  // Clear old client if disconnected to allow fresh reconnection
-  if (whatsappClient && connectionStatus === "disconnected") {
-    log("Clearing old WhatsApp client for reconnection", "whatsapp");
-    try {
-      await whatsappClient.destroy();
-    } catch (e) {
-      // Ignore errors during cleanup
-    }
-    whatsappClient = null;
-    cachedQrCode = null;
-  }
-  
-  // Start new initialization
-  isInitializing = true;
-  initPromise = initWhatsAppClient(socketIO);
-  
-  try {
-    const result = await initPromise;
-    return result;
-  } finally {
-    isInitializing = false;
-    initPromise = null;
-  }
-}
-
-async function initWhatsAppClient(socketIO: SocketIOServer) {
-  if (whatsappClient) {
-    return whatsappClient;
-  }
-
-  log("Initializing WhatsApp client...", "whatsapp");
-
-  const { Client: WAClient, LocalAuth: WALocalAuth } = await loadWhatsAppModule();
-
-  const chromiumPath = findChromiumPath();
-  
-  const puppeteerOptions: any = {
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--no-first-run",
-      "--no-zygote",
-      "--single-process",
-      "--disable-gpu",
-    ],
-  };
-  
-  if (chromiumPath) {
-    puppeteerOptions.executablePath = chromiumPath;
-  }
-  
-  whatsappClient = new WAClient({
-    authStrategy: new WALocalAuth({
-      dataPath: "./.wwebjs_auth",
-    }),
-    puppeteer: puppeteerOptions,
-  });
-
-  whatsappClient.on("qr", async (qr: string) => {
-    log("QR code received", "whatsapp");
-    connectionStatus = "qr_ready";
-    try {
-      const qrDataUrl = await qrcode.toDataURL(qr, {
-        width: 256,
-        margin: 2,
-      });
-      cachedQrCode = qrDataUrl;
-      socketIO.emit("qr", qrDataUrl);
-      socketIO.emit("connection_status", connectionStatus);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      log(`Error generating QR: ${errorMsg}`, "whatsapp");
-    }
-  });
-
-  whatsappClient.on("ready", async () => {
-    log("WhatsApp client is ready!", "whatsapp");
-    connectionStatus = "connected";
-    cachedQrCode = null;
-    socketIO.emit("connection_status", connectionStatus);
-
-    try {
-      const info = whatsappClient?.info;
-      if (info?.wid?.user) {
-        myNumber = info.wid.user;
-        const settings = storage.getSettings();
-        settings.myNumber = myNumber;
-        storage.saveSettings(settings);
-        log(`Connected as: ${myNumber}`, "whatsapp");
-      }
-
-      await sendGroupsToClients(socketIO);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      log(`Error on ready: ${errorMsg}`, "whatsapp");
-    }
-  });
-
-  whatsappClient.on("authenticated", () => {
-    log("WhatsApp authenticated", "whatsapp");
-  });
-
-  whatsappClient.on("auth_failure", (msg: string) => {
-    log(`Authentication failure: ${msg}`, "whatsapp");
-    connectionStatus = "disconnected";
-    socketIO.emit("connection_status", connectionStatus);
-    socketIO.emit("error", "Authentication failed. Please try again.");
-  });
-
-  whatsappClient.on("disconnected", (reason: string) => {
-    log(`WhatsApp disconnected: ${reason}`, "whatsapp");
-    connectionStatus = "disconnected";
-    socketIO.emit("connection_status", connectionStatus);
-  });
-
-  // Use message_create to capture all messages including from group members
-  whatsappClient.on("message_create", async (msg: any) => {
-    try {
-      // Skip messages sent by ourselves
-      if (msg.fromMe) return;
-      
-      const chat = await msg.getChat();
-      
-      if (!chat.isGroup) {
-        return;
-      }
-
-      const settings = storage.getSettings();
-      
-      log(`Message in group "${chat.name}" (${chat.id._serialized}): "${msg.body.substring(0, 50)}..."`, "whatsapp");
-      log(`Watched groups: ${JSON.stringify(settings.watchedGroups)}`, "whatsapp");
-      log(`Keywords: ${JSON.stringify(settings.alertKeywords)}`, "whatsapp");
-      
-      if (!settings.watchedGroups.includes(chat.id._serialized)) {
-        log(`Group ${chat.name} is not in watched list, skipping`, "whatsapp");
-        return;
-      }
-
-      const messageText = msg.body.toLowerCase();
-      const matchedKeyword = settings.alertKeywords.find((keyword: string) =>
-        messageText.includes(keyword.toLowerCase())
-      );
-
-      if (!matchedKeyword) {
-        log(`No keyword match found in message`, "whatsapp");
-        return;
-      }
-
-      // Get sender name with error handling - getContact() can fail on newer WhatsApp versions
-      let senderName = "לא ידוע";
-      try {
-        const contact = await msg.getContact();
-        senderName = contact?.pushname || contact?.name || contact?.number || "לא ידוע";
-      } catch (contactError) {
-        const errorMsg = contactError instanceof Error ? contactError.message : String(contactError);
-        log(`Could not get contact info: ${errorMsg}`, "whatsapp");
-        // Try to get sender info from message directly
-        try {
-          const senderId = msg.author || msg.from;
-          if (senderId) {
-            senderName = senderId.replace("@c.us", "").replace("@s.whatsapp.net", "");
-          }
-        } catch {
-          // Keep default "לא ידוע"
-        }
-      }
-
-      log(`Keyword "${matchedKeyword}" detected in ${chat.name} from ${senderName}`, "whatsapp");
-
-      const alertData = {
-        groupId: chat.id._serialized,
-        groupName: chat.name,
-        matchedKeyword,
-        messageText: msg.body,
-        senderName,
-        timestamp: Date.now(),
-        alertSent: false,
-      };
-
-      const alert = storage.addAlert(alertData);
-
-      // Send WhatsApp alert message to user
-      if (myNumber) {
-        try {
-          const myChat = await whatsappClient?.getChatById(`${myNumber}@c.us`);
-          if (myChat) {
-            const alertMessage = `*התראת כוננות קל*\n\n` +
-              `*קבוצה:* ${chat.name}\n` +
-              `*מילת מפתח:* ${matchedKeyword}\n` +
-              `*מאת:* ${senderName}\n` +
-              `*זמן:* ${new Date().toLocaleString("he-IL")}\n\n` +
-              `*הודעה:*\n${msg.body}`;
-            
-            await myChat.sendMessage(alertMessage);
-            alert.alertSent = true;
-            log(`Alert WhatsApp message sent to ${myNumber}`, "whatsapp");
-          } else {
-            log(`Could not find chat for ${myNumber}`, "whatsapp");
-          }
-        } catch (sendError) {
-          const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
-          log(`Error sending WhatsApp alert: ${errorMsg}`, "whatsapp");
-        }
-      } else {
-        log(`No user phone number configured, cannot send WhatsApp alert`, "whatsapp");
-      }
-
-      // Emit to dashboard
-      socketIO.emit("new_alert", alert);
-      log(`Alert emitted to dashboard`, "whatsapp");
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      log(`Error processing message: ${errorMsg}`, "whatsapp");
-    }
-  });
-
-  connectionStatus = "connecting";
-  socketIO.emit("connection_status", connectionStatus);
-  
-  // Initialize WhatsApp client - handle errors properly
-  try {
-    await whatsappClient.initialize();
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    log(`Error initializing WhatsApp: ${errorMsg}`, "whatsapp");
-    connectionStatus = "disconnected";
-    socketIO.emit("connection_status", connectionStatus);
-  }
-
-  return whatsappClient;
-}
-
-async function sendGroupsToClients(socketIO: SocketIOServer) {
-  if (!whatsappClient || connectionStatus !== "connected") {
-    return;
-  }
-
-  try {
-    const chats = await whatsappClient.getChats();
-    const groups: WhatsAppGroup[] = chats
-      .filter((chat: any) => chat.isGroup)
-      .map((chat: any) => ({
-        id: chat.id._serialized,
-        name: chat.name,
-        isGroup: true,
-      }))
-      .sort((a: WhatsAppGroup, b: WhatsAppGroup) => a.name.localeCompare(b.name));
-
-    log(`Found ${groups.length} groups`, "whatsapp");
-    socketIO.emit("groups", groups);
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    log(`Error fetching groups: ${errorMsg}`, "whatsapp");
-  }
-}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // WhatsApp status endpoint - provides detailed connection status
-  // Note: Simple /api/health is registered in index.ts for fast deployment health checks
-  app.get("/api/status", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      whatsapp: connectionStatus,
-    });
+  // Setup authentication
+  await setupAuth(app);
+
+  // Auth routes
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
   });
 
+  // User settings endpoints
+  app.get("/api/settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const settings = await storage.getUserSettings(userId);
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  app.post("/api/settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const settings: Settings = req.body;
+      await storage.saveUserSettings(userId, settings);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      res.status(500).json({ message: "Failed to save settings" });
+    }
+  });
+
+  // User alerts endpoints
+  app.get("/api/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const alerts = await storage.getAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching alerts:", error);
+      res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  app.delete("/api/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.clearAlerts(userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error clearing alerts:", error);
+      res.status(500).json({ message: "Failed to clear alerts" });
+    }
+  });
+
+  // WhatsApp status endpoint
+  app.get("/api/whatsapp/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const status = getUserStatus(userId);
+      const qrCode = getUserQRCode(userId);
+      const groups = getUserGroups(userId);
+      res.json({ status, qrCode, groups });
+    } catch (error) {
+      console.error("Error fetching WhatsApp status:", error);
+      res.status(500).json({ message: "Failed to fetch WhatsApp status" });
+    }
+  });
+
+  // Admin endpoints
+  app.get("/api/admin/users", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user?.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Socket.IO setup with user rooms
   io = new SocketIOServer(httpServer, {
     path: "/socket.io",
     cors: {
@@ -355,74 +137,80 @@ export async function registerRoutes(
     allowEIO3: true,
   });
 
+  setSocketIO(io);
+
   io.on("connection", async (socket) => {
     log(`Client connected: ${socket.id}`, "socket.io");
 
-    socket.emit("connection_status", connectionStatus);
-    socket.emit("settings", storage.getSettings());
-    socket.emit("alerts", storage.getAlerts());
-
-    if (connectionStatus === "qr_ready" && cachedQrCode) {
-      socket.emit("qr", cachedQrCode);
-    }
-
-    if (connectionStatus === "connected" && io) {
-      await sendGroupsToClients(io);
-    }
-
-    // Handle manual WhatsApp connection request
-    socket.on("start_whatsapp", async () => {
-      log("User requested WhatsApp connection", "socket.io");
-      if (!io) {
-        socket.emit("error", "Socket.IO not initialized");
+    // User must authenticate via socket event
+    socket.on("authenticate", async (userId: string) => {
+      if (!userId) {
+        socket.emit("error", "User ID required");
         return;
       }
-      if (connectionStatus === "disconnected" && !isInitializing) {
+
+      log(`User ${userId} authenticated on socket ${socket.id}`, "socket.io");
+      joinUserRoom(socket, userId);
+
+      // Send current state to this user
+      const status = getUserStatus(userId);
+      const qrCode = getUserQRCode(userId);
+      const groups = getUserGroups(userId);
+      const settings = await storage.getUserSettings(userId);
+      const alerts = await storage.getAlerts(userId);
+
+      socket.emit("connection_status", status);
+      socket.emit("settings", settings);
+      socket.emit("alerts", alerts);
+      socket.emit("groups", groups);
+
+      if (status === "qr_ready" && qrCode) {
+        socket.emit("qr_code", qrCode);
+      }
+
+      // Handle user-specific events
+      socket.on("start_whatsapp", async () => {
+        log(`User ${userId} requested WhatsApp connection`, "socket.io");
         try {
-          await ensureWhatsAppClient(io);
+          await initializeUserWhatsApp(userId);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
-          log(`Error starting WhatsApp: ${errorMsg}`, "socket.io");
+          log(`Error starting WhatsApp for user ${userId}: ${errorMsg}`, "socket.io");
           socket.emit("error", "Failed to start WhatsApp connection");
         }
-      } else if (isInitializing) {
-        log("WhatsApp already initializing, please wait", "socket.io");
-      } else {
-        log(`WhatsApp already in state: ${connectionStatus}`, "socket.io");
-      }
-    });
+      });
 
-    socket.on("save_settings", (settings: Settings) => {
-      try {
-        // Validate settings before saving
-        if (!settings || typeof settings !== 'object') {
-          throw new Error("Invalid settings format");
+      socket.on("save_settings", async (settings: Settings) => {
+        try {
+          if (!settings || typeof settings !== 'object') {
+            throw new Error("Invalid settings format");
+          }
+          if (!Array.isArray(settings.watchedGroups)) {
+            settings.watchedGroups = [];
+          }
+          if (!Array.isArray(settings.alertKeywords)) {
+            settings.alertKeywords = [];
+          }
+          await storage.saveUserSettings(userId, settings);
+          log(`Settings saved for user ${userId}: ${settings.watchedGroups.length} groups, ${settings.alertKeywords.length} keywords`, "socket.io");
+          socket.emit("settings", settings);
+          socket.emit("settings_saved");
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          log(`Error saving settings for user ${userId}: ${errorMsg}`, "socket.io");
+          socket.emit("error", "Failed to save settings");
         }
-        if (!Array.isArray(settings.watchedGroups)) {
-          settings.watchedGroups = [];
-        }
-        if (!Array.isArray(settings.alertKeywords)) {
-          settings.alertKeywords = [];
-        }
-        if (myNumber) {
-          settings.myNumber = myNumber;
-        }
-        storage.saveSettings(settings);
-        log(`Settings saved: ${settings.watchedGroups.length} groups, ${settings.alertKeywords.length} keywords`, "socket.io");
-        io?.emit("settings", settings);
-        socket.emit("settings_saved");
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        log(`Error saving settings: ${errorMsg}`, "socket.io");
-        socket.emit("error", "Failed to save settings");
-      }
-    });
+      });
 
-    socket.on("refresh_groups", async () => {
-      log("Refreshing groups...", "socket.io");
-      if (io) {
-        await sendGroupsToClients(io);
-      }
+      socket.on("refresh_groups", async () => {
+        log(`Refreshing groups for user ${userId}...`, "socket.io");
+        await refreshUserGroups(userId);
+      });
+
+      socket.on("disconnect_whatsapp", async () => {
+        log(`User ${userId} requested WhatsApp disconnect`, "socket.io");
+        await disconnectUserWhatsApp(userId);
+      });
     });
 
     socket.on("disconnect", () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,8 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
+import { Link } from "wouter";
 import { 
   Wifi, 
   WifiOff, 
@@ -22,14 +25,29 @@ import {
   Users,
   Search,
   Sparkles,
-  Zap
+  Zap,
+  LogOut,
+  Shield
 } from "lucide-react";
-import type { WhatsAppGroup, Settings as SettingsType, Alert, ConnectionStatus } from "@shared/schema";
+import type { WhatsAppGroup, Settings as SettingsType, ConnectionStatus } from "@shared/schema";
+
+interface AlertDisplay {
+  id: number;
+  groupId: string;
+  groupName: string;
+  matchedKeyword: string;
+  messageText: string;
+  senderName: string;
+  timestamp: Date | string;
+  alertSent: boolean;
+}
 
 export default function Dashboard() {
   const { toast } = useToast();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const toastRef = useRef(toast);
+  const authenticatedRef = useRef(false);
   
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -40,7 +58,7 @@ export default function Dashboard() {
     myNumber: undefined,
   });
   const [keywordsInput, setKeywordsInput] = useState("");
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertDisplay[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
@@ -50,26 +68,35 @@ export default function Dashboard() {
     toastRef.current = toast;
   }, [toast]);
 
+  // Redirect to login if not authenticated
   useEffect(() => {
-    if (socketRef.current?.connected) return;
+    if (!authLoading && !isAuthenticated) {
+      window.location.href = "/api/login";
+    }
+  }, [authLoading, isAuthenticated]);
+
+  // Socket connection with user authentication
+  useEffect(() => {
+    if (!user?.id || authenticatedRef.current) return;
 
     const socket = io({
       path: "/socket.io",
-      // Use polling first, then upgrade to websocket for better production compatibility
       transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
-      // Increase timeout for production
       timeout: 20000,
     });
 
     socket.on("connect", () => {
-      console.log("Socket connected");
+      console.log("Socket connected, authenticating...");
+      socket.emit("authenticate", user.id);
+      authenticatedRef.current = true;
     });
 
     socket.on("disconnect", () => {
       console.log("Socket disconnected");
+      authenticatedRef.current = false;
     });
 
     socket.on("connection_status", (status: ConnectionStatus) => {
@@ -81,7 +108,7 @@ export default function Dashboard() {
       }
     });
 
-    socket.on("qr", (qr: string) => {
+    socket.on("qr_code", (qr: string) => {
       console.log("QR code received");
       setQrCode(qr);
       setConnectionStatus("qr_ready");
@@ -94,14 +121,14 @@ export default function Dashboard() {
 
     socket.on("settings", (loadedSettings: SettingsType) => {
       setSettings(loadedSettings);
-      setKeywordsInput(loadedSettings.alertKeywords.join(", "));
+      setKeywordsInput(loadedSettings.alertKeywords?.join(", ") || "");
     });
 
-    socket.on("alerts", (alertList: Alert[]) => {
+    socket.on("alerts", (alertList: AlertDisplay[]) => {
       setAlerts(alertList);
     });
 
-    socket.on("new_alert", (alert: Alert) => {
+    socket.on("new_alert", (alert: AlertDisplay) => {
       setAlerts((prev) => [alert, ...prev].slice(0, 50));
       toastRef.current({
         title: "התראה נשלחה",
@@ -123,14 +150,16 @@ export default function Dashboard() {
         description: error,
         variant: "destructive",
       });
+      setIsStartingWhatsApp(false);
     });
 
     socketRef.current = socket;
 
     return () => {
       socket.disconnect();
+      authenticatedRef.current = false;
     };
-  }, []);
+  }, [user?.id]);
 
   const handleGroupToggle = (groupId: string) => {
     setSettings((prev) => {
@@ -185,11 +214,15 @@ export default function Dashboard() {
     socketRef.current?.emit("start_whatsapp");
   };
 
+  const handleLogout = () => {
+    window.location.href = "/api/logout";
+  };
+
   const filteredGroups = groups.filter((group) =>
     group.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const formatTimestamp = (timestamp: number) => {
+  const formatTimestamp = (timestamp: Date | string) => {
     const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -241,6 +274,17 @@ export default function Dashboard() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background" dir="rtl">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
+          <p className="text-muted-foreground">טוען...</p>
+        </div>
+      </div>
+    );
+  }
+
   const statusConfig = getStatusConfig();
   const StatusIcon = statusConfig.icon;
 
@@ -251,38 +295,39 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="text-center py-6"
+          className="py-4"
         >
-          <div className="flex flex-col items-center gap-4">
-            <motion.div 
-              className="relative"
-              animate={{ 
-                rotate: [0, 5, -5, 0],
-              }}
-              transition={{ 
-                duration: 4,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            >
-              <div className="p-4 bg-gradient-to-br from-primary/20 to-chart-4/20 rounded-2xl shadow-lg">
-                <MessageSquare className="w-10 h-10 text-primary" />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-primary/20 to-chart-4/20 rounded-xl">
+                <MessageSquare className="w-6 h-6 text-primary" />
               </div>
-              <motion.div 
-                className="absolute -top-1 -left-1"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <Sparkles className="w-5 h-5 text-chart-3" />
-              </motion.div>
-            </motion.div>
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary via-chart-4 to-chart-5 bg-clip-text text-transparent" data-testid="text-app-title">שני בקבוקי שתייה</h1>
-              <p className="text-sm text-muted-foreground mt-1 flex items-center justify-center gap-2">
-                <Zap className="w-4 h-4 text-chart-3" />
-                ניטור קבוצות וואטסאפ
-                <Zap className="w-4 h-4 text-chart-3" />
-              </p>
+              <div>
+                <h1 className="text-xl font-bold text-foreground" data-testid="text-app-title">כוננות קל</h1>
+                <p className="text-xs text-muted-foreground">ניטור קבוצות וואטסאפ</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              {user?.isAdmin && (
+                <Link href="/admin">
+                  <Button variant="outline" size="sm" data-testid="button-admin">
+                    <Shield className="w-4 h-4 ml-2" />
+                    ניהול
+                  </Button>
+                </Link>
+              )}
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user?.profileImageUrl || undefined} />
+                  <AvatarFallback>
+                    {(user?.firstName?.[0] || user?.email?.[0] || "?").toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="button-logout">
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </motion.header>
@@ -340,7 +385,7 @@ export default function Dashboard() {
                 </motion.div>
                 <h3 className="text-xl font-semibold mb-2">התחבר לוואטסאפ</h3>
                 <p className="text-muted-foreground text-center max-w-sm mb-6">
-                  לחץ על הכפתור למטה כדי להתחיל את תהליך ההתחברות לוואטסאפ
+                  לחץ על הכפתור למטה כדי להתחיל את תהליך ההתחברות לוואטסאפ שלך
                 </p>
                 <Button 
                   size="lg"
@@ -374,7 +419,7 @@ export default function Dashboard() {
                   סרוק להתחברות
                 </CardTitle>
                 <CardDescription className="max-w-sm mx-auto">
-                  פתח את וואטסאפ בטלפון, לך להגדרות ← מכשירים מקושרים ← קשר מכשיר
+                  פתח את וואטסאפ בטלפון, לך להגדרות → מכשירים מקושרים → קשר מכשיר
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col items-center py-8">
