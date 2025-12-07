@@ -28,14 +28,23 @@ let whatsappModule: { Client: any; LocalAuth: any } | null = null;
 
 async function loadWhatsAppModule() {
   if (!whatsappModule) {
-    const module = await import("whatsapp-web.js");
-    if (!module.Client || !module.LocalAuth) {
-      throw new Error("WhatsApp module failed to load properly");
+    try {
+      const module = await import("whatsapp-web.js");
+      // Handle both default and named exports
+      const Client = module.Client || (module.default && module.default.Client);
+      const LocalAuth = module.LocalAuth || (module.default && module.default.LocalAuth);
+      
+      if (!Client || !LocalAuth) {
+        log(`WhatsApp module exports: ${Object.keys(module).join(", ")}`);
+        throw new Error("WhatsApp module failed to load properly - missing Client or LocalAuth");
+      }
+      whatsappModule = { Client, LocalAuth };
+      log("WhatsApp module loaded successfully");
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log(`Error loading WhatsApp module: ${errorMsg}`);
+      throw error;
     }
-    whatsappModule = {
-      Client: module.Client,
-      LocalAuth: module.LocalAuth,
-    };
   }
   return whatsappModule;
 }
@@ -101,15 +110,22 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
         chromiumPath = process.env.CHROMIUM_PATH;
       } else {
         const possiblePaths = ["chromium", "chromium-browser", "google-chrome"];
-        for (const path of possiblePaths) {
+        for (const cmdName of possiblePaths) {
           try {
-            execSync(`which ${path}`, { encoding: "utf-8" });
-            chromiumPath = path;
-            break;
+            // Get the full path from which command
+            const fullPath = execSync(`which ${cmdName}`, { encoding: "utf-8" }).trim();
+            if (fullPath) {
+              chromiumPath = fullPath;
+              break;
+            }
           } catch {
             // Continue to next path
           }
         }
+      }
+      
+      if (!chromiumPath) {
+        throw new Error("Chromium browser not found. Please ensure Chromium is installed.");
       }
 
       log(`Using Chromium path: ${chromiumPath || "default"} for user ${userId}`);
@@ -191,9 +207,14 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
       await client.initialize();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : "";
       log(`Error initializing WhatsApp for user ${userId}: ${errorMsg}`);
+      if (errorStack) {
+        log(`Stack trace: ${errorStack}`);
+      }
       session.status = "disconnected";
       emitToUser(userId, "connection_status", session.status);
+      emitToUser(userId, "error", errorMsg);
       await storage.updateWhatsAppStatus(userId, session.status);
       throw error;
     } finally {
