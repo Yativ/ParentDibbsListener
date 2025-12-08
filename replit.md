@@ -18,6 +18,14 @@ Preferred communication style: Simple, everyday language.
 3. **WhatsApp Self-Messaging Alerts** - Sends actual WhatsApp messages to user's phone number
 4. **Connection Stability Improvements** - Retry logic, better session management, timeout handling
 5. **Phone Number Input** - Users can configure their phone number for receiving alerts
+6. **Global Language Toggle** - Available on landing page for unauthenticated users, persists to localStorage and syncs to DB on login
+7. **WhatsApp Auto-Reconnect** - Sessions persist across logins; auto-reconnect checks for existing auth data on socket authentication
+8. **Dual Branding** - Hebrew "כוננות קל" and English "Whatsappdibs" across all meta tags and UI
+
+### Connection Stability Updates:
+- `autoReconnectingUsers` Set prevents duplicate initialization when socket authenticates rapidly
+- `isUserInitializing()` helper function checks if WhatsApp client is mid-initialization
+- Session files in `.wwebjs_auth/session-{userId}` trigger auto-reconnect on login
 
 ### Schema Updates:
 - Added `group_keywords` table for per-group keyword settings
