@@ -2,13 +2,27 @@
 
 ## Overview
 
-כוננות קל (Easy Standby) is a **multi-user SaaS** WhatsApp monitoring platform that allows each user to connect their own WhatsApp, track specific groups for keyword mentions, and receive real-time private message alerts. The application provides a web-based interface in Hebrew for managing WhatsApp group subscriptions, defining alert keywords, and viewing triggered alerts when important messages are detected.
+כוננות קל (Konanut Kal / Easy Standby) is a **multi-user SaaS** WhatsApp monitoring platform that allows each user to connect their own WhatsApp, track specific groups for keyword mentions, and receive real-time private WhatsApp message alerts. The application provides a bilingual web interface (Hebrew/English) for managing WhatsApp group subscriptions, defining per-group alert keywords, and viewing triggered alerts.
 
-The system uses WhatsApp Web.js to connect to WhatsApp via QR code authentication, monitors selected groups in real-time, and sends private WhatsApp messages when keywords are matched in group conversations. The entire UI is in Hebrew with RTL (right-to-left) support.
+The system uses WhatsApp Web.js to connect to WhatsApp via QR code authentication, monitors selected groups in real-time, and **sends actual private WhatsApp messages** when keywords are matched in group conversations.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+
+## Recent Changes (December 2024)
+
+### New Features Added:
+1. **Bilingual i18n System** - Full Hebrew/English support with language toggle
+2. **Per-Group Keywords** - Keywords can now be set per group instead of global-only
+3. **WhatsApp Self-Messaging Alerts** - Sends actual WhatsApp messages to user's phone number
+4. **Connection Stability Improvements** - Retry logic, better session management, timeout handling
+5. **Phone Number Input** - Users can configure their phone number for receiving alerts
+
+### Schema Updates:
+- Added `group_keywords` table for per-group keyword settings
+- Added `language` field to `user_settings` (default: "he")
+- Enhanced alert tracking with `alertSent` status
 
 ## Multi-User Architecture
 
@@ -45,13 +59,17 @@ This is a **multi-tenant SaaS application** where:
 **UI Framework:**
 - Shadcn/ui component library with Radix UI primitives
 - Tailwind CSS for styling with custom design system
-- Material Design 3 inspired approach (per design guidelines)
-- Inter font family from Google Fonts
-- Mobile-first responsive design
+- Framer Motion for animations
+- Mobile-first responsive design with RTL/LTR support
+
+**i18n System:**
+- Translation files at `client/src/lib/i18n.ts`
+- Supports Hebrew (`he`) and English (`en`)
+- Language preference persisted per user in database
+- RTL/LTR direction automatically applied based on language
 
 **Pages:**
-- `/` - Landing page with marketing content and login CTA
-- `/dashboard` - Main app (requires auth) - WhatsApp connection, groups, keywords, alerts
+- `/` - Landing page (unauthenticated) or Dashboard (authenticated)
 - `/admin` - Admin panel (requires auth + isAdmin) - User management
 
 **State Management Strategy:**
@@ -83,18 +101,35 @@ This is a **multi-tenant SaaS application** where:
 - Async setup happens AFTER server is already listening
 - This ensures deployment health checks pass instantly
 
-**WhatsApp Session Manager:**
-- `WhatsAppSessionManager` class manages multiple isolated sessions
-- Each user gets their own WhatsApp client instance
+**WhatsApp Session Manager (`server/whatsappManager.ts`):**
+- Per-user isolated WhatsApp client instances
 - Session data stored in `.wwebjs_auth/<userId>` directories
-- LocalAuth strategy for persistent sessions per user
-- Automatic client cleanup on disconnect
+- LocalAuth strategy for persistent sessions
+- **Connection Stability Features:**
+  - Retry logic with MAX_RETRY_ATTEMPTS (3)
+  - INIT_TIMEOUT (2 minutes) to prevent hanging
+  - Safe client destruction on disconnect/auth_failure
+  - Single-flight initialization pattern
+- **Self-Messaging Alert System:**
+  - Sends WhatsApp message to user's configured phone number
+  - Bilingual alert message format (Hebrew + English)
+  - Uses `client.sendMessage()` for reliability
+  - Tracks `alertSent` status in database
 
 **Socket.IO Multi-User Design:**
 - Users must authenticate via `socket.emit("authenticate", userId)`
 - Each user joins a private room `user:${userId}`
 - Events are emitted only to the authenticated user's room
-- Events: `connection_status`, `qr_code`, `groups`, `settings`, `alerts`, `new_alert`
+- Events: `connection_status`, `qr_code`, `groups`, `settings`, `group_keywords`, `alerts`, `new_alert`
+
+**Socket Events:**
+- `start_whatsapp` - Initialize WhatsApp connection
+- `save_settings` - Save user settings (groups, global keywords, phone)
+- `save_group_keywords` - Save per-group keywords
+- `delete_group_keywords` - Remove per-group keywords
+- `set_language` - Update user's language preference
+- `refresh_groups` - Refresh WhatsApp groups list
+- `disconnect_whatsapp` - Disconnect WhatsApp
 
 **Storage Strategy:**
 - PostgreSQL database for all persistent data
@@ -107,12 +142,40 @@ This is a **multi-tenant SaaS application** where:
 **Tables:**
 - `users` - User accounts (id, email, firstName, lastName, profileImageUrl, isAdmin, createdAt)
 - `sessions` - Express session storage
-- `user_settings` - Per-user settings (userId, watchedGroups, alertKeywords)
+- `user_settings` - Per-user settings (userId, watchedGroups, alertKeywords, myNumber, language, whatsappStatus)
+- `group_keywords` - Per-group keyword settings (userId, groupId, groupName, keywords[])
 - `alerts` - Alert history (userId, groupId, groupName, matchedKeyword, messageText, senderName, timestamp, alertSent)
 
 **Key Relationships:**
 - All tables except `users` have a `userId` foreign key
 - Cascade delete on user removal
+
+### API Endpoints
+
+**Authentication:**
+- `GET /api/login` - Initiate Replit Auth login
+- `GET /api/logout` - Logout and destroy session
+- `GET /api/auth/user` - Get current authenticated user
+
+**Settings:**
+- `GET /api/settings` - Get user settings
+- `POST /api/settings` - Save user settings
+- `POST /api/language` - Update language preference
+
+**Group Keywords:**
+- `GET /api/group-keywords` - Get all per-group keywords
+- `POST /api/group-keywords` - Save keywords for a group
+- `DELETE /api/group-keywords/:groupId` - Delete keywords for a group
+
+**Alerts:**
+- `GET /api/alerts` - Get user's alerts
+- `DELETE /api/alerts` - Clear all alerts
+
+**WhatsApp:**
+- `GET /api/whatsapp/status` - Get connection status, QR code, groups
+
+**Admin:**
+- `GET /api/admin/users` - Get all users (admin only)
 
 ### Build and Deployment
 
@@ -179,6 +242,8 @@ This is a **multi-tenant SaaS application** where:
 │   │   └── not-found.tsx    # 404 page
 │   ├── hooks/
 │   │   └── useAuth.ts       # Authentication hook
+│   ├── lib/
+│   │   └── i18n.ts          # Translation system
 │   └── components/ui/       # Shadcn components
 ├── server/
 │   ├── index.ts             # Server entry point
@@ -200,3 +265,14 @@ UPDATE users SET is_admin = true WHERE email = 'admin@example.com';
 ```
 
 The first user to sign up should be designated as admin for initial setup.
+
+## Keyword Alert Logic
+
+When a message is received in a monitored group:
+1. Check if the group is in the user's `watchedGroups` list
+2. Get per-group keywords from `group_keywords` table
+3. If no per-group keywords, fall back to global `alertKeywords`
+4. If message contains any keyword:
+   - Send WhatsApp message to user's `myNumber` (if configured)
+   - Save alert to database with `alertSent` status
+   - Emit `new_alert` event to user's Socket.IO room

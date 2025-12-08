@@ -35,14 +35,26 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// User WhatsApp settings - per user
+// User WhatsApp settings - per user (global settings)
 export const userSettings = pgTable("user_settings", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
   watchedGroups: text("watched_groups").array().default([]),
-  alertKeywords: text("alert_keywords").array().default([]),
+  alertKeywords: text("alert_keywords").array().default([]), // Legacy - kept for backward compatibility
   myNumber: varchar("my_number"),
   whatsappStatus: varchar("whatsapp_status").default("disconnected"),
+  language: varchar("language").default("he"), // 'he' or 'en'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Per-group keyword settings
+export const groupKeywords = pgTable("group_keywords", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  groupId: varchar("group_id").notNull(),
+  groupName: varchar("group_name").notNull(),
+  keywords: text("keywords").array().default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -65,6 +77,8 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserSettings = typeof userSettings.$inferInsert;
+export type GroupKeywords = typeof groupKeywords.$inferSelect;
+export type InsertGroupKeywords = typeof groupKeywords.$inferInsert;
 export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = typeof alerts.$inferInsert;
 
@@ -79,6 +93,13 @@ export const settingsSchema = z.object({
   watchedGroups: z.array(z.string()),
   alertKeywords: z.array(z.string()),
   myNumber: z.string().optional(),
+  language: z.enum(["he", "en"]).optional(),
+});
+
+export const groupKeywordsSchema = z.object({
+  groupId: z.string(),
+  groupName: z.string(),
+  keywords: z.array(z.string()),
 });
 
 export const alertSchema = z.object({
@@ -97,6 +118,7 @@ export const connectionStatusSchema = z.enum(["disconnected", "connecting", "qr_
 
 export type WhatsAppGroup = z.infer<typeof groupSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
+export type GroupKeywordsSetting = z.infer<typeof groupKeywordsSchema>;
 export type ConnectionStatus = z.infer<typeof connectionStatusSchema>;
 
 export const insertSettingsSchema = settingsSchema;
