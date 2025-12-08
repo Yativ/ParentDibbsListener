@@ -149,11 +149,42 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
 
   const initPromise = (async () => {
     try {
+      log(`[INIT START] Starting WhatsApp initialization for user ${userId}`);
+      log(`[INIT] Environment: NODE_ENV=${process.env.NODE_ENV}`);
+      log(`[INIT] Current working directory: ${process.cwd()}`);
+      
+      // Ensure session directory exists
+      const fs = await import("fs");
+      const path = await import("path");
+      const sessionDir = path.join(process.cwd(), ".wwebjs_auth");
+      
+      try {
+        if (!fs.existsSync(sessionDir)) {
+          fs.mkdirSync(sessionDir, { recursive: true });
+          log(`[INIT] Created session directory: ${sessionDir}`);
+        } else {
+          log(`[INIT] Session directory exists: ${sessionDir}`);
+        }
+        
+        // Check if user session exists
+        const userSessionDir = path.join(sessionDir, `session-${userId}`);
+        if (fs.existsSync(userSessionDir)) {
+          log(`[INIT] Existing user session found at: ${userSessionDir}`);
+        } else {
+          log(`[INIT] No existing user session at: ${userSessionDir} (will create new)`);
+        }
+      } catch (fsError) {
+        const fsErrorMsg = fsError instanceof Error ? fsError.message : String(fsError);
+        log(`[INIT ERROR] Failed to check/create session directory: ${fsErrorMsg}`);
+        // Continue anyway - LocalAuth will try to create it
+      }
+      
+      log(`[INIT] Loading WhatsApp module...`);
       const { Client, LocalAuth } = await loadWhatsAppModule();
+      log(`[INIT] WhatsApp module loaded successfully`);
       
       // Detect Chromium path - try multiple methods for production compatibility
       const { execSync, spawnSync } = await import("child_process");
-      const fs = await import("fs");
       let chromiumPath: string | undefined;
       
       // Method 1: Environment variable
@@ -231,8 +262,29 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
         throw new Error(errorMsg);
       }
 
-      log(`Using Chromium path: ${chromiumPath} for user ${userId}`);
+      log(`[INIT] Using Chromium path: ${chromiumPath} for user ${userId}`);
+      
+      // Verify chromium is executable
+      try {
+        const testResult = spawnSync(chromiumPath, ["--version"], { 
+          encoding: "utf-8", 
+          timeout: 10000,
+          stdio: ["pipe", "pipe", "pipe"]
+        });
+        if (testResult.stdout) {
+          log(`[INIT] Chromium version: ${testResult.stdout.trim()}`);
+        }
+        if (testResult.stderr) {
+          log(`[INIT] Chromium stderr: ${testResult.stderr.trim()}`);
+        }
+        if (testResult.error) {
+          log(`[INIT WARNING] Chromium test failed: ${testResult.error.message}`);
+        }
+      } catch (versionErr) {
+        log(`[INIT WARNING] Could not get Chromium version: ${versionErr instanceof Error ? versionErr.message : String(versionErr)}`);
+      }
 
+      log(`[INIT] Configuring Puppeteer arguments...`);
       const puppeteerArgs = [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -259,6 +311,7 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
         qrMaxRetries: 5,
       });
 
+      log(`[INIT] WhatsApp client created, setting up event handlers...`);
       session.client = client;
 
       // QR Code event
@@ -332,22 +385,46 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
       });
 
       // Initialize with timeout
+      log(`[INIT] Starting client.initialize() with ${INIT_TIMEOUT_MS}ms timeout...`);
+      
       const initWithTimeout = Promise.race([
-        client.initialize(),
+        client.initialize().then(() => {
+          log(`[INIT] client.initialize() completed successfully`);
+        }).catch((initError: Error) => {
+          log(`[INIT ERROR] client.initialize() failed: ${initError.message}`);
+          log(`[INIT ERROR] Stack: ${initError.stack}`);
+          throw initError;
+        }),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Initialization timeout")), INIT_TIMEOUT_MS)
+          setTimeout(() => {
+            log(`[INIT TIMEOUT] Initialization timed out after ${INIT_TIMEOUT_MS}ms`);
+            reject(new Error(`Initialization timeout after ${INIT_TIMEOUT_MS}ms`));
+          }, INIT_TIMEOUT_MS)
         ),
       ]);
 
       await initWithTimeout;
-      log(`WhatsApp client initialized successfully for user ${userId}`);
+      log(`[INIT SUCCESS] WhatsApp client initialized successfully for user ${userId}`);
       
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : "";
-      log(`Error initializing WhatsApp for user ${userId}: ${errorMsg}`);
+      const errorName = error instanceof Error ? error.name : "Unknown";
+      
+      log(`[INIT FAILURE] WhatsApp initialization failed for user ${userId}`);
+      log(`[INIT FAILURE] Error type: ${errorName}`);
+      log(`[INIT FAILURE] Error message: ${errorMsg}`);
       if (errorStack) {
-        log(`Stack trace: ${errorStack}`);
+        log(`[INIT FAILURE] Full stack trace:\n${errorStack}`);
+      }
+      
+      // Log additional error properties if available
+      if (error && typeof error === 'object') {
+        const errObj = error as Record<string, unknown>;
+        if (errObj.code) log(`[INIT FAILURE] Error code: ${errObj.code}`);
+        if (errObj.syscall) log(`[INIT FAILURE] Syscall: ${errObj.syscall}`);
+        if (errObj.errno) log(`[INIT FAILURE] Errno: ${errObj.errno}`);
+        if (errObj.path) log(`[INIT FAILURE] Path: ${errObj.path}`);
       }
       
       session.status = "disconnected";

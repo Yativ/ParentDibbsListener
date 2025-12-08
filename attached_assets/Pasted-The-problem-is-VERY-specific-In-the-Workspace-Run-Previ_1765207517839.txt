@@ -1,0 +1,57 @@
+The problem is VERY specific:
+
+In the Workspace “Run/Preview” the app works: WhatsApp connects to my personal account, groups are monitored, everything is OK.
+
+In the Published App at https://parent-dibbs-listener--yativtal.replit.app/, the page loads but shows:
+
+Error / Connection failed. Retrying (1/3)…
+
+Initializing WhatsApp connection… forever
+
+At the bottom, a JSON dump: {"mode":"full","isActive":true,"isUserDisabled":false}.
+
+So the HTTP server is up, but the WhatsApp connection/initialization loop is repeatedly failing in production.​
+
+Do the following, step by step, directly in the code (do NOT answer with generic advice, actually edit files):
+
+Locate the WhatsApp init logic
+
+Find the file(s) where the WhatsApp client is created and connected (e.g. using whatsapp-web.js / Baileys / similar).
+
+Find the code that returns mode, isActive, and isUserDisabled for that JSON status.​
+
+Add hard logging around the failing path
+
+Wrap the entire WhatsApp initialization / connection flow in try/catch.
+
+On every failure, console.error the FULL error (stack trace, message, and which step failed: session load, browser launch, QR, WebSocket, etc.).
+
+Make sure these logs appear in the Published App deployment logs, not only in preview.​
+
+Check preview vs production assumptions in code
+
+Search the repo for any use of preview URLs, localhost, or hard‑coded hosts/ports. Replace anything that depends on the preview URL with relative URLs or server‑side logic that works at https://parent-dibbs-listener--yativtal.replit.app/ too.​
+
+Verify any environment variables (secrets) used for WhatsApp or sessions are read from Replit Secrets and are available in Published Apps. If needed, create or fix them so production sees the same values as preview.​
+
+Fix session / filesystem handling for production
+
+Ensure the WhatsApp session directory (e.g. .wwebjs_auth, ./sessions, etc.) is created if missing, and that the path is relative to the project root so it exists in both preview and production.
+
+If a session file load fails in production (file not found, permission denied, etc.), log that clearly and either recreate the session or handle it without crashing the init loop.​
+
+Redeploy and verify
+
+After making code changes, redeploy the app.
+
+Use the new logs to identify the exact runtime error that only happens in the Published App, then PATCH THE CODE until WhatsApp connects successfully in production as it does in preview.
+
+Do not stop after adding logs; keep iterating on the code until there is no infinite “Connection failed. Retrying (1/3)” loop in production.
+
+Only respond with:
+
+The specific files you changed.
+
+The exact code changes you made.
+
+The error you observed in deployment logs and how you fixed it.
