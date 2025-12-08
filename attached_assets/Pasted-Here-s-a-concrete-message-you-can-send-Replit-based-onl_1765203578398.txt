@@ -1,0 +1,68 @@
+Here’s a concrete message you can send Replit, based only on what is visible at your deployed URL right now (the actual, specific symptoms), not generic WhatsApp theory:
+
+Subject: Deployed app stuck on “Initializing WhatsApp connection…” – backend error not exposed
+
+Hi Replit team,
+
+I have a Published App at:
+
+https://parent-dibbs-listener--yativtal.replit.app/​
+
+The page content currently shows:
+
+A visible error banner: “Error / Connection failed. Retrying (1/3)…”
+
+Then the app UI with: “Connecting…” and “Initializing WhatsApp connection… This may take a few moments”
+
+And finally a JSON debug block: {"mode":"full","isActive":true,"isUserDisabled":false} printed directly on the page.​
+
+From this, a few very concrete technical facts are clear:
+
+Frontend is served, but some internal request is failing repeatedly
+
+The fact that the page renders successfully and shows “Connection failed. Retrying (1/3)…” means my HTTP server is up and the frontend code is running, but an internal step (probably an API call from the frontend to the backend inside the same deployment) is throwing an error and triggering a retry loop.​
+
+The JSON blob {"mode":"full","isActive":true,"isUserDisabled":false} suggests the status endpoint returns static or cached app state, while the actual WhatsApp-connection call behind the “Initializing WhatsApp connection…” text is failing before it can update that state or return success.​
+
+The error is happening in the server/runtime, not in static hosting
+
+Because the page is clearly dynamic (rendered HTML with runtime text and a JSON dump at the bottom), this deployment is not a static site; there is a running server process.​
+
+The “Connection failed. Retrying (1/3)…” string is not a Replit platform message; it is my own app’s error UI, so the problem is inside the app process (for example, a thrown exception when initializing a long‑lived connection) rather than the deployment failing to boot.​
+
+The backend likely fails during some async initialization and never reaches “connected” state
+
+The app shows both the error message and the “Initializing WhatsApp connection…” state at the same time. That strongly implies:
+
+An initialization function is started (to connect to WhatsApp / open a session).
+
+That function throws or rejects, so the UI surfaces “Connection failed. Retrying (1/3)…”.
+
+However, the code that should flip a “connected” flag is never reached, so the UI stays in the “Initializing…” text forever.​
+
+This means that in the Published App runtime, at least one awaited promise in the startup flow is failing on every attempt.
+
+Given this, here is what I specifically need from you / what to look at on your side:
+
+Check the deployment logs exactly at app start
+
+Please inspect the logs for this deployment (app: parent-dibbs-listener--yativtal) and look for unhandled rejections or thrown errors during startup or immediately after the first HTTP request.​
+
+I expect to see something like a stack trace from the WhatsApp initialization function (for example: failing to access the filesystem, missing dependency, or failing to open a browser/connection). Right now, only my own “Connection failed. Retrying (1/3)…” message is visible in the browser; the underlying exception is not.​
+
+Confirm filesystem / working-directory behavior for this deployment
+
+The visible JSON {"mode":"full","isActive":true,"isUserDisabled":false} suggests the server can read/write some state, but the separate WhatsApp init code still fails. That points to a possible mismatch between the dev working directory (where session/config files exist) and the Published App working directory.​
+
+Please confirm:
+
+What is the working directory for the Published App process?
+
+Are there any restrictions on writing files or reading existing directories that might cause an initialization function to throw (e.g., when trying to load a session file from ./sessions or similar)?​
+
+Confirm that long‑running async initializers are supported as used here
+
+The app clearly expects to be able to run an asynchronous “connect” routine at startup and keep a long‑lived connection open. The endless “Initializing WhatsApp connection…” plus error/retry loop shows this routine is repeatedly failing rather than succeeding once and staying alive.​
+
+Please confirm there are no platform constraints in Published Apps that would kill or sandbox such a long‑running initializer in a way that differs from running the same code in the regular Repl workspace.​
+

@@ -151,19 +151,53 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
     try {
       const { Client, LocalAuth } = await loadWhatsAppModule();
       
-      // Detect Chromium path
-      const { execSync } = await import("child_process");
+      // Detect Chromium path - try multiple methods for production compatibility
+      const { execSync, spawnSync } = await import("child_process");
+      const fs = await import("fs");
       let chromiumPath: string | undefined;
       
+      // Method 1: Environment variable
       if (process.env.CHROMIUM_PATH) {
         chromiumPath = process.env.CHROMIUM_PATH;
-      } else {
-        const possiblePaths = ["chromium", "chromium-browser", "google-chrome"];
+        log(`Using CHROMIUM_PATH env var: ${chromiumPath}`);
+      }
+      
+      // Method 2: Common Nix store paths (production VMs)
+      if (!chromiumPath) {
+        const nixPaths = [
+          "/nix/store",
+        ];
+        
+        for (const basePath of nixPaths) {
+          try {
+            // Look for chromium in nix store
+            const result = spawnSync("find", [basePath, "-name", "chromium", "-type", "f", "-executable", "-maxdepth", "5"], {
+              encoding: "utf-8",
+              timeout: 5000,
+            });
+            if (result.stdout) {
+              const paths = result.stdout.trim().split("\n").filter(p => p && p.includes("chromium"));
+              if (paths.length > 0) {
+                chromiumPath = paths[0];
+                log(`Found Chromium in nix store: ${chromiumPath}`);
+                break;
+              }
+            }
+          } catch {
+            // Continue to next method
+          }
+        }
+      }
+      
+      // Method 3: which command
+      if (!chromiumPath) {
+        const possiblePaths = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"];
         for (const cmdName of possiblePaths) {
           try {
-            const fullPath = execSync(`which ${cmdName}`, { encoding: "utf-8" }).trim();
-            if (fullPath) {
+            const fullPath = execSync(`which ${cmdName} 2>/dev/null`, { encoding: "utf-8" }).trim();
+            if (fullPath && fs.existsSync(fullPath)) {
               chromiumPath = fullPath;
+              log(`Found Chromium via which: ${chromiumPath}`);
               break;
             }
           } catch {
@@ -172,8 +206,29 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
         }
       }
       
+      // Method 4: Common absolute paths
       if (!chromiumPath) {
-        throw new Error("Chromium browser not found. Please ensure Chromium is installed.");
+        const absolutePaths = [
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+          "/snap/bin/chromium",
+        ];
+        for (const path of absolutePaths) {
+          if (fs.existsSync(path)) {
+            chromiumPath = path;
+            log(`Found Chromium at absolute path: ${chromiumPath}`);
+            break;
+          }
+        }
+      }
+      
+      if (!chromiumPath) {
+        const errorMsg = "Chromium browser not found. Please ensure Chromium is installed via Nix packages.";
+        log(`ERROR: ${errorMsg}`);
+        emitToUser(userId, "error", errorMsg);
+        throw new Error(errorMsg);
       }
 
       log(`Using Chromium path: ${chromiumPath} for user ${userId}`);
