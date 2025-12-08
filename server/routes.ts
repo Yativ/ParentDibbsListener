@@ -31,6 +31,49 @@ let io: SocketIOServer | null = null;
 // Track users currently being auto-reconnected to prevent duplicate initialization
 const autoReconnectingUsers = new Set<string>();
 
+// Rate limiting for WhatsApp initialization (expensive operation)
+const whatsappInitRateLimit = new Map<string, number>();
+const WHATSAPP_INIT_COOLDOWN_MS = 30000; // 30 seconds between initialization attempts
+const RATE_LIMIT_CLEANUP_INTERVAL_MS = 300000; // Clean up expired entries every 5 minutes
+
+function checkWhatsAppRateLimit(userId: string): { allowed: boolean; remainingMs: number } {
+  const now = Date.now();
+  const lastAttempt = whatsappInitRateLimit.get(userId) || 0;
+  const elapsed = now - lastAttempt;
+  
+  if (elapsed < WHATSAPP_INIT_COOLDOWN_MS) {
+    return { allowed: false, remainingMs: WHATSAPP_INIT_COOLDOWN_MS - elapsed };
+  }
+  
+  whatsappInitRateLimit.set(userId, now);
+  return { allowed: true, remainingMs: 0 };
+}
+
+// Cleanup expired rate limit entries periodically to prevent memory growth
+setInterval(() => {
+  const now = Date.now();
+  const expiredThreshold = now - WHATSAPP_INIT_COOLDOWN_MS * 2; // Keep entries for 2x the cooldown period
+  const toDelete: string[] = [];
+  whatsappInitRateLimit.forEach((timestamp, userId) => {
+    if (timestamp < expiredThreshold) {
+      toDelete.push(userId);
+    }
+  });
+  toDelete.forEach(userId => whatsappInitRateLimit.delete(userId));
+}, RATE_LIMIT_CLEANUP_INTERVAL_MS);
+
+// Input sanitization helpers
+const MAX_KEYWORD_LENGTH = 100;
+const MAX_KEYWORDS_PER_GROUP = 50;
+
+function sanitizeKeywords(keywords: string[]): string[] {
+  if (!Array.isArray(keywords)) return [];
+  return keywords
+    .filter(k => typeof k === "string" && k.length > 0)
+    .slice(0, MAX_KEYWORDS_PER_GROUP)
+    .map(k => k.slice(0, MAX_KEYWORD_LENGTH).trim());
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -66,6 +109,24 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const settings: Settings = req.body;
+      
+      // Sanitize input
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ message: "Invalid settings format" });
+      }
+      
+      // Sanitize alert keywords
+      settings.alertKeywords = sanitizeKeywords(settings.alertKeywords || []);
+      
+      // Sanitize watched groups
+      if (Array.isArray(settings.watchedGroups)) {
+        settings.watchedGroups = settings.watchedGroups
+          .filter((g: any) => typeof g === "string" && g.length > 0)
+          .slice(0, 100); // Max 100 groups
+      } else {
+        settings.watchedGroups = [];
+      }
+      
       await storage.saveUserSettings(userId, settings);
       res.json({ success: true });
     } catch (error) {
@@ -132,7 +193,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Group ID and name required" });
       }
       
-      await storage.saveGroupKeywords(userId, groupId, groupName, keywords || []);
+      // Sanitize group name
+      const sanitizedGroupName = typeof groupName === "string" 
+        ? groupName.slice(0, 200).trim() 
+        : "";
+      if (!sanitizedGroupName) {
+        return res.status(400).json({ message: "Invalid group name" });
+      }
+      
+      // Sanitize keywords
+      const sanitizedKeywords = sanitizeKeywords(keywords);
+      
+      await storage.saveGroupKeywords(userId, groupId, sanitizedGroupName, sanitizedKeywords);
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving group keywords:", error);
@@ -171,27 +243,105 @@ export async function registerRoutes(
     }
   });
 
-  // Admin endpoints
+  // Admin endpoints with audit logging
   app.get("/api/admin/users", isAuthenticated, async (req: any, res) => {
+    const requestorId = req.user.claims.sub;
+    const requestorEmail = req.user.claims.email || "unknown";
+    
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await storage.getUser(requestorId);
+      
+      // Audit log: Admin access attempt
+      log(`[ADMIN AUDIT] User ${requestorId} (${requestorEmail}) attempted to access admin/users - isAdmin: ${user?.isAdmin || false}`, "admin");
+      
       if (!user?.isAdmin) {
+        log(`[ADMIN AUDIT] DENIED: User ${requestorId} (${requestorEmail}) - not an admin`, "admin");
         return res.status(403).json({ message: "Admin access required" });
       }
+      
       const users = await storage.getAllUsers();
+      log(`[ADMIN AUDIT] SUCCESS: Admin ${requestorId} (${requestorEmail}) fetched ${users.length} users`, "admin");
       res.json(users);
     } catch (error) {
-      console.error("Error fetching users:", error);
+      console.error(`[ADMIN AUDIT] ERROR: Admin access by ${requestorId}: ${error}`);
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
 
   // Socket.IO setup with user rooms
+  // SECURITY: Configure CORS with strict origin restrictions
+  // Build allowed origins ONLY from environment variables - no wildcard patterns
+  
+  // Helper to normalize origin (lowercase, remove trailing slash, validate format)
+  function normalizeOrigin(origin: string): string | null {
+    try {
+      const trimmed = origin.trim().toLowerCase().replace(/\/+$/, "");
+      // Validate it looks like an origin (protocol + host)
+      if (!trimmed.match(/^https?:\/\/[a-z0-9.-]+/i)) {
+        return null;
+      }
+      return trimmed;
+    } catch {
+      return null;
+    }
+  }
+  
+  const allowedOrigins: string[] = [];
+  
+  // Add Replit deployment domains from environment (these are the ONLY production origins allowed)
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    const normalized = normalizeOrigin(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+    if (normalized) allowedOrigins.push(normalized);
+  }
+  if (process.env.REPLIT_DOMAINS) {
+    process.env.REPLIT_DOMAINS.split(",").forEach(domain => {
+      const normalized = normalizeOrigin(`https://${domain}`);
+      if (normalized) allowedOrigins.push(normalized);
+    });
+  }
+  // Add custom origins from ALLOWED_ORIGINS env var if set
+  if (process.env.ALLOWED_ORIGINS) {
+    process.env.ALLOWED_ORIGINS.split(",").forEach(origin => {
+      const normalized = normalizeOrigin(origin);
+      if (normalized) allowedOrigins.push(normalized);
+    });
+  }
+  
+  // Add localhost only for development
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push("http://localhost:5000", "https://localhost:5000", "http://0.0.0.0:5000");
+  }
+  
+  log(`[CORS] Allowed origins: ${allowedOrigins.join(", ") || "(none configured)"}`, "cors");
+
   io = new SocketIOServer(httpServer, {
     path: "/socket.io",
     cors: {
-      origin: "*",
+      origin: (origin, callback) => {
+        // Allow requests with no origin (server-to-server, curl, mobile apps)
+        if (!origin) return callback(null, true);
+        
+        // In development mode, allow all origins
+        if (process.env.NODE_ENV !== "production") {
+          return callback(null, true);
+        }
+        
+        // Normalize incoming origin for consistent comparison
+        const normalizedIncoming = normalizeOrigin(origin);
+        if (!normalizedIncoming) {
+          log(`[SECURITY] CORS rejected malformed origin: ${origin}`, "cors");
+          return callback(new Error("Not allowed by CORS"));
+        }
+        
+        // PRODUCTION: Strict matching - only allow explicitly configured origins
+        if (allowedOrigins.includes(normalizedIncoming)) {
+          return callback(null, true);
+        }
+        
+        // Log and reject unauthorized origins
+        log(`[SECURITY] CORS rejected origin: ${origin}`, "cors");
+        callback(new Error("Not allowed by CORS"));
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -271,6 +421,16 @@ export async function registerRoutes(
       // Handle user-specific events
       socket.on("start_whatsapp", async () => {
         log(`User ${userId} requested WhatsApp connection`, "socket.io");
+        
+        // Rate limiting check
+        const rateCheck = checkWhatsAppRateLimit(userId);
+        if (!rateCheck.allowed) {
+          const seconds = Math.ceil(rateCheck.remainingMs / 1000);
+          log(`Rate limit: User ${userId} must wait ${seconds}s before retrying WhatsApp connection`, "socket.io");
+          socket.emit("error", `Please wait ${seconds} seconds before trying again`);
+          return;
+        }
+        
         try {
           await initializeUserWhatsApp(userId);
         } catch (error) {
@@ -288,9 +448,16 @@ export async function registerRoutes(
           if (!Array.isArray(settings.watchedGroups)) {
             settings.watchedGroups = [];
           }
-          if (!Array.isArray(settings.alertKeywords)) {
-            settings.alertKeywords = [];
+          // Sanitize and validate alert keywords
+          settings.alertKeywords = sanitizeKeywords(settings.alertKeywords || []);
+          
+          // Sanitize watched groups (limit and validate)
+          if (Array.isArray(settings.watchedGroups)) {
+            settings.watchedGroups = settings.watchedGroups
+              .filter(g => typeof g === "string" && g.length > 0)
+              .slice(0, 100); // Max 100 groups
           }
+          
           await storage.saveUserSettings(userId, settings);
           log(`Settings saved for user ${userId}: ${settings.watchedGroups.length} groups, ${settings.alertKeywords.length} keywords`, "socket.io");
           socket.emit("settings", settings);
@@ -319,11 +486,22 @@ export async function registerRoutes(
             socket.emit("error", "Group ID and name required");
             return;
           }
-          await storage.saveGroupKeywords(userId, groupId, groupName, keywords || []);
+          // Validate group name length
+          const sanitizedGroupName = typeof groupName === "string" 
+            ? groupName.slice(0, 200).trim() 
+            : "";
+          if (!sanitizedGroupName) {
+            socket.emit("error", "Invalid group name");
+            return;
+          }
+          // Sanitize keywords input
+          const sanitizedKeywords = sanitizeKeywords(keywords);
+          
+          await storage.saveGroupKeywords(userId, groupId, sanitizedGroupName, sanitizedKeywords);
           const allKeywords = await storage.getGroupKeywords(userId);
           socket.emit("group_keywords", allKeywords);
           socket.emit("group_keywords_saved");
-          log(`Group keywords saved for user ${userId}, group ${groupName}`, "socket.io");
+          log(`Group keywords saved for user ${userId}, group ${sanitizedGroupName}`, "socket.io");
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           log(`Error saving group keywords for user ${userId}: ${errorMsg}`, "socket.io");

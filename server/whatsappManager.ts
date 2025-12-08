@@ -402,7 +402,6 @@ async function handleMessage(userId: string, msg: any) {
       matchedKeyword,
       messageText: msg.body || "",
       senderName,
-      alertSent: false,
     }, alertSent);
 
     // Send in-app notification
@@ -432,10 +431,24 @@ async function sendWhatsAppAlert(
   }
 
   try {
-    // Clean and format phone number
-    const cleanNumber = phoneNumber.replace(/\D/g, "");
-    if (!cleanNumber || cleanNumber.length < 10) {
-      log(`Invalid phone number for user ${userId}: ${phoneNumber}`);
+    // Clean and format phone number - support international formats
+    // Remove all non-digit characters except leading +
+    let cleanNumber = phoneNumber.replace(/[^\d+]/g, "");
+    
+    // Handle + prefix for international numbers
+    if (cleanNumber.startsWith("+")) {
+      cleanNumber = cleanNumber.substring(1);
+    }
+    
+    // Validate phone number length (international numbers can be 7-15 digits)
+    if (!cleanNumber || cleanNumber.length < 7 || cleanNumber.length > 15) {
+      log(`Invalid phone number for user ${userId}: ${phoneNumber} (length: ${cleanNumber.length})`);
+      return false;
+    }
+    
+    // Validate it contains only digits after cleaning
+    if (!/^\d+$/.test(cleanNumber)) {
+      log(`Invalid phone number format for user ${userId}: ${phoneNumber}`);
       return false;
     }
     

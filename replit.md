@@ -27,6 +27,15 @@ Preferred communication style: Simple, everyday language.
 - `isUserInitializing()` helper function checks if WhatsApp client is mid-initialization
 - Session files in `.wwebjs_auth/session-{userId}` trigger auto-reconnect on login
 
+### Security Updates (December 2024):
+- **CORS**: Strict env-driven whitelist only (REPLIT_DEV_DOMAIN, REPLIT_DOMAINS, ALLOWED_ORIGINS). No wildcard patterns.
+- **Input Sanitization**: Keywords max 100 chars, max 50 per group. Group names max 200 chars. Watched groups max 100.
+- **Rate Limiting**: WhatsApp initialization has 30-second cooldown per user with periodic cleanup.
+- **Admin Audit Logging**: All admin access attempts logged with user ID, email, and outcome.
+- **Phone Validation**: International format support (7-15 digits, handles + prefix).
+- **.gitignore**: `.wwebjs_auth/` directory excluded to prevent credential exposure.
+- **Health Check**: Optional database connectivity check via `?db=true` parameter.
+
 ### Schema Updates:
 - Added `group_keywords` table for per-group keyword settings
 - Added `language` field to `user_settings` (default: "he")

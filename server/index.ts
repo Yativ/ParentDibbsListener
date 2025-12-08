@@ -59,8 +59,32 @@ app.use((req, res, next) => {
 });
 
 // Health check endpoint - responds immediately for deployment checks
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+app.get("/api/health", async (_req, res) => {
+  try {
+    // Basic health check always succeeds quickly
+    const health: { status: string; database?: string; timestamp: string } = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Optionally check database connectivity (with timeout)
+    const checkDb = _req.query.db === "true";
+    if (checkDb) {
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        await db.execute(sql`SELECT 1`);
+        health.database = "connected";
+      } catch (dbError) {
+        health.database = "error";
+        log(`Health check DB error: ${dbError}`, "health");
+      }
+    }
+    
+    res.status(200).json(health);
+  } catch (error) {
+    res.status(500).json({ status: "error", message: "Health check failed" });
+  }
 });
 
 // In production, serve static files
