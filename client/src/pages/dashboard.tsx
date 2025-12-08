@@ -34,7 +34,7 @@ import {
   Phone
 } from "lucide-react";
 import type { WhatsAppGroup, Settings as SettingsType, ConnectionStatus, GroupKeywordsSetting } from "@shared/schema";
-import { useTranslation, type Language } from "@/lib/i18n";
+import { useTranslation, type Language, getStoredLanguage, setStoredLanguage } from "@/lib/i18n";
 
 interface AlertDisplay {
   id: number;
@@ -62,7 +62,7 @@ export default function Dashboard() {
     watchedGroups: [],
     alertKeywords: [],
     myNumber: undefined,
-    language: "he",
+    language: getStoredLanguage(), // Initialize from localStorage
   });
   const [groupKeywords, setGroupKeywords] = useState<GroupKeywordsSetting[]>([]);
   const [keywordsInput, setKeywordsInput] = useState("");
@@ -81,10 +81,12 @@ export default function Dashboard() {
   const lang = (settings.language || "he") as Language;
   const { t, isRTL } = useTranslation(lang);
 
-  // Keep langRef in sync with settings.language
+  // Keep langRef in sync with settings.language and update document
   useEffect(() => {
     langRef.current = lang;
-  }, [lang]);
+    setStoredLanguage(lang);
+    document.title = `${t("appName")} - ${t("appDescription")}`;
+  }, [lang, t]);
 
   useEffect(() => {
     toastRef.current = toast;

@@ -13,6 +13,7 @@ import {
   disconnectUserWhatsApp,
   joinUserRoom,
   getAllSessions,
+  isUserInitializing,
 } from "./whatsappManager";
 import type { Settings, GroupKeywordsSetting } from "@shared/schema";
 
@@ -26,6 +27,9 @@ const log = (message: string, prefix = "server") => {
 };
 
 let io: SocketIOServer | null = null;
+
+// Track users currently being auto-reconnected to prevent duplicate initialization
+const autoReconnectingUsers = new Set<string>();
 
 export async function registerRoutes(
   httpServer: Server,
@@ -229,6 +233,39 @@ export async function registerRoutes(
 
       if (status === "qr_ready" && qrCode) {
         socket.emit("qr_code", qrCode);
+      }
+
+      // Auto-reconnect: If user was previously connected but session was lost, try to restore
+      // Check if auth data exists and user is disconnected - attempt auto-reconnect
+      // Use a Set to prevent duplicate initialization before the async function starts
+      const freshStatus = getUserStatus(userId);
+      const alreadyInitializing = isUserInitializing(userId);
+      const alreadyAutoReconnecting = autoReconnectingUsers.has(userId);
+      
+      if (freshStatus === "disconnected" && !alreadyInitializing && !alreadyAutoReconnecting) {
+        const fs = await import("fs");
+        const authPath = `./.wwebjs_auth/session-${userId}`;
+        try {
+          if (fs.existsSync(authPath)) {
+            // Mark as reconnecting BEFORE calling initialize to prevent race conditions
+            autoReconnectingUsers.add(userId);
+            
+            log(`Found existing session for user ${userId}, attempting auto-reconnect...`, "socket.io");
+            socket.emit("connection_status", "connecting");
+            
+            initializeUserWhatsApp(userId)
+              .catch((err) => {
+                log(`Auto-reconnect failed for user ${userId}: ${err}`, "socket.io");
+              })
+              .finally(() => {
+                // Remove from set after initialization completes (success or failure)
+                autoReconnectingUsers.delete(userId);
+              });
+          }
+        } catch (err) {
+          // Ignore errors checking for session
+          autoReconnectingUsers.delete(userId);
+        }
       }
 
       // Handle user-specific events

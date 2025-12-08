@@ -82,6 +82,11 @@ export function getUserGroups(userId: string): WhatsAppGroup[] {
   return session?.groups || [];
 }
 
+export function isUserInitializing(userId: string): boolean {
+  const session = userSessions.get(userId);
+  return session?.initPromise !== null || session?.status === "connecting";
+}
+
 // Helper function to safely destroy a client
 async function safeDestroyClient(client: any, userId: string): Promise<void> {
   if (!client) return;

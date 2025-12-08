@@ -1,5 +1,37 @@
 export type Language = "he" | "en";
 
+// Language storage key for localStorage
+export const LANGUAGE_STORAGE_KEY = "app_language";
+
+// Get stored language from localStorage
+export function getStoredLanguage(): Language {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored === "he" || stored === "en") {
+      return stored;
+    }
+  }
+  return "he"; // Default to Hebrew
+}
+
+// Store language in localStorage (only if changed)
+export function setStoredLanguage(lang: Language): void {
+  if (typeof window !== "undefined") {
+    const currentLang = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    const currentDir = document.documentElement.getAttribute("dir");
+    const expectedDir = lang === "he" ? "rtl" : "ltr";
+    
+    // Only update if actually changed
+    if (currentLang !== lang) {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+    }
+    if (currentDir !== expectedDir) {
+      document.documentElement.setAttribute("dir", expectedDir);
+      document.documentElement.setAttribute("lang", lang);
+    }
+  }
+}
+
 export const translations = {
   he: {
     // App title and descriptions
@@ -94,10 +126,30 @@ export const translations = {
     language: "שפה",
     hebrew: "עברית",
     english: "English",
+    
+    // Landing page
+    landingTitle: "ניטור קבוצות WhatsApp בזמן אמת",
+    landingSubtitle: "קבלו התראות פרטיות כאשר מילות מפתח מופיעות בקבוצות שלכם",
+    getStarted: "התחילו עכשיו - חינם",
+    login: "התחברות",
+    groupMonitoring: "ניטור קבוצות",
+    groupMonitoringDesc: "בחרו קבוצות WhatsApp לניטור ומילות מפתח לחיפוש",
+    realTimeAlerts: "התראות בזמן אמת",
+    realTimeAlertsDesc: "קבלו הודעה פרטית ב-WhatsApp כאשר מזהים מילת מפתח",
+    securePrivate: "מאובטח ופרטי",
+    securePrivateDesc: "חיבור מאובטח - הנתונים שלכם נשארים רק אצלכם",
+    multiUser: "רב-משתמשים",
+    multiUserDesc: "כל משתמש מחבר את ה-WhatsApp שלו ומקבל התראות משלו",
+    howItWorks: "איך זה עובד?",
+    step1: "התחברו עם חשבון Google או אחר",
+    step2: "סרקו קוד QR לחיבור WhatsApp שלכם",
+    step3: "בחרו קבוצות והגדירו מילות מפתח",
+    step4: "קבלו התראות פרטיות ישירות ל-WhatsApp שלכם",
+    copyright: "© {year} {appName}. כל הזכויות שמורות.",
   },
   en: {
     // App title and descriptions
-    appName: "Konanut Kal",
+    appName: "Whatsappdibs",
     appDescription: "WhatsApp Group Monitoring",
     
     // Connection status
@@ -188,6 +240,26 @@ export const translations = {
     language: "Language",
     hebrew: "עברית",
     english: "English",
+    
+    // Landing page
+    landingTitle: "Real-Time WhatsApp Group Monitoring",
+    landingSubtitle: "Get private alerts when keywords appear in your groups",
+    getStarted: "Get Started - Free",
+    login: "Login",
+    groupMonitoring: "Group Monitoring",
+    groupMonitoringDesc: "Choose WhatsApp groups to monitor and keywords to search",
+    realTimeAlerts: "Real-Time Alerts",
+    realTimeAlertsDesc: "Receive a private WhatsApp message when a keyword is detected",
+    securePrivate: "Secure & Private",
+    securePrivateDesc: "Secure connection - your data stays only with you",
+    multiUser: "Multi-User",
+    multiUserDesc: "Each user connects their own WhatsApp and receives their own alerts",
+    howItWorks: "How It Works",
+    step1: "Sign in with Google or another account",
+    step2: "Scan QR code to connect your WhatsApp",
+    step3: "Select groups and set keywords",
+    step4: "Receive private alerts directly to your WhatsApp",
+    copyright: "© {year} {appName}. All rights reserved.",
   },
 };
 
