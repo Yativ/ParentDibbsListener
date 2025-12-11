@@ -15,6 +15,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Build the application for production
+RUN npm run build
+
 # Copy application files
 COPY . .
 
@@ -23,4 +26,4 @@ COPY . .
 EXPOSE 5000
 
 # Start the application
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]
