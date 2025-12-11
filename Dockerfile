@@ -18,11 +18,9 @@ RUN npm ci
 # Copy application files
 COPY . .
 
-# Build TypeScript
-RUN npm run build
 
 # Expose port
 EXPOSE 5000
 
 # Start the application
-CMD ["npm", "start"]
+CMD ["npm", "run", "dev"]
