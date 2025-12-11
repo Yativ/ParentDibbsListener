@@ -295,6 +295,13 @@ export async function initializeUserWhatsApp(userId: string): Promise<void> {
         "--disable-gpu",
         "--single-process",
         "--disable-extensions",
+            "--disable-software-rasterizer",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--mute-audio",
+              "--disable-features=AudioServiceOutOfProcess",
+              "--disable-audio-output",
+              "--disable-dev-profile",
       ];
 
       const client = new Client({
