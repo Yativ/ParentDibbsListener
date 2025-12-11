@@ -9,6 +9,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 # Set working directory
 WORKDIR /usr/src/app
 
+# Switch to root for installation
+USER root
 # Copy package files
 COPY package*.json ./
 
@@ -26,5 +28,7 @@ RUN npm run build
 # Expose port
 EXPOSE 5000
 
+# Switch back to pptruser for runtime
+USER pptruser
 # Start the application
 CMD ["npm", "start"]
