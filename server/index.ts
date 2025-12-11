@@ -191,14 +191,6 @@ httpServer.listen(
   await registerRoutes(httpServer, app);
 
   // In development, setup Vite after routes
-  if (process.env.NODE_ENV !== "production") {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
-    // Signal that Vite is ready to handle requests
-    if ((global as any).setViteReady) {
-      (global as any).setViteReady();
-    }
-  }
 
   log("Server fully initialized");
 })();
