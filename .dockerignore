@@ -1,0 +1,11 @@
+node_modules
+dist
+.wwebjs_auth
+.wwebjs_cache
+.env
+.git
+.replit
+npm-debug.log
+.vscode
+.DS_Store
+client
