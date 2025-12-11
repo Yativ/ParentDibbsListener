@@ -15,11 +15,13 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Copy application files
+COPY . .
+
 # Build the application for production
 RUN npm run build
 
-# Copy application files
-COPY . .
+
 
 
 # Expose port
