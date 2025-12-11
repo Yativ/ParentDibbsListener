@@ -48,7 +48,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --include=dev
 
 # Copy application files
 COPY . .
